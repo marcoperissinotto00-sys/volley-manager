@@ -7,11 +7,8 @@ interface Atleta {
   id: number;
   first_name?: string;
   last_name?: string;
-  nome?: string;
-  cognome?: string;
   jersey_number?: number | null;
   ruolo?: string | null;
-  court_role?: string | null;
   codice_fiscale?: string | null;
   email?: string | null;
   cellulare?: string | null;
@@ -31,7 +28,7 @@ export default function PlayersPage() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [showForm, setShowForm] = useState<boolean>(false);
 
-  // Stato per tutti i campi del form
+  // Stato form
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [jerseyNumber, setJerseyNumber] = useState('');
@@ -54,11 +51,12 @@ export default function PlayersPage() {
   const [addettoAntincendio, setAddettoAntincendio] = useState(false);
   const [scadenzaAntincendio, setScadenzaAntincendio] = useState('');
 
-  // Recupera gli atleti dalla tabella 'atleti'
+  // Caricamento dati
   async function fetchAtleti() {
     const { data, error } = await supabase
-      .from('atleti') // <-- Usa correttamente la tabella ATLETI
-      .select('*');
+      .from('atleti')
+      .select('*')
+      .order('id', { ascending: false });
 
     if (!error && data) {
       setAtleti(data as Atleta[]);
@@ -70,7 +68,7 @@ export default function PlayersPage() {
     fetchAtleti();
   }, []);
 
-  // Gestione dell'invio del form
+  // Invio Form
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!firstName || !lastName) return;
@@ -78,7 +76,6 @@ export default function PlayersPage() {
     setSubmitting(true);
 
     const newAtletaData = {
-      // Inseriamo sia first_name/last_name sia nome/cognome in base a come hai nominato i campi
       first_name: firstName,
       last_name: lastName,
       jersey_number: jerseyNumber ? parseInt(jerseyNumber, 10) : null,
@@ -102,7 +99,6 @@ export default function PlayersPage() {
       scadenza_antincendio: addettoAntincendio && scadenzaAntincendio ? scadenzaAntincendio : null,
     };
 
-    // Salvataggio sulla tabella ATLETI
     const { error } = await supabase
       .from('atleti')
       .insert([newAtletaData]);
@@ -112,7 +108,6 @@ export default function PlayersPage() {
     if (error) {
       alert(`Errore salvataggio: ${error.message}`);
     } else {
-      // Reset campi
       setFirstName('');
       setLastName('');
       setJerseyNumber('');
@@ -283,10 +278,10 @@ export default function PlayersPage() {
         </form>
       )}
 
-      {/* LISTA GIOCATORI */}
+      {/* Lista Atleti */}
       {atleti.length === 0 ? (
         <div className="p-8 text-center bg-white rounded-lg shadow text-slate-500">
-          Nessun atleta presente nella tabella 'atleti'.
+          Nessun atleta registrato.
         </div>
       ) : (
         <ul className="space-y-3">
@@ -298,7 +293,7 @@ export default function PlayersPage() {
                 </span>
                 <div>
                   <div className="font-semibold text-lg">
-                    {atleta.first_name || atleta.nome} {atleta.last_name || atleta.cognome}
+                    {atleta.first_name} {atleta.last_name}
                   </div>
                   <div className="text-xs text-slate-500">
                     {atleta.codice_fiscale || ''} {atleta.email ? `• ${atleta.email}` : ''}
@@ -306,7 +301,7 @@ export default function PlayersPage() {
                 </div>
               </div>
               <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">
-                {atleta.ruolo || atleta.court_role || 'Non assegnato'}
+                {atleta.ruolo || 'Non assegnato'}
               </span>
             </li>
           ))}
