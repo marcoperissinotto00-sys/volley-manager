@@ -177,11 +177,9 @@ export default function PlayersPage() {
     let error;
 
     if (editingId) {
-      // Modifica atleta esistente
       const res = await supabase.from('atleti').update(atletaData).eq('id', editingId);
       error = res.error;
     } else {
-      // Inserimento nuovo atleta
       const res = await supabase.from('atleti').insert([atletaData]);
       error = res.error;
     }
