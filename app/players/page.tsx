@@ -277,36 +277,43 @@ export default function PlayersPage() {
           </div>
         </form>
       )}
+	  
+	  {/* LISTA ATLETI */}
+{atleti.length === 0 ? (
+  <div className="p-8 text-center bg-white rounded-lg shadow text-slate-500">
+    Nessun atleta registrato.
+  </div>
+) : (
+  <ul className="space-y-3">
+    {atleti.map((atleta) => {
+      const nomeMostrato = atleta.first_name || (atleta as any).nome || '';
+      const cognomeMostrato = atleta.last_name || (atleta as any).cognome || '';
+      const ruoloMostrato = atleta.ruolo || (atleta as any).court_role || 'Non assegnato';
 
-      {/* Lista Atleti */}
-      {atleti.length === 0 ? (
-        <div className="p-8 text-center bg-white rounded-lg shadow text-slate-500">
-          Nessun atleta registrato.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {atleti.map((atleta) => (
-            <li key={atleta.id} className="p-4 bg-white shadow rounded-lg flex justify-between items-center text-slate-900 border">
-              <div className="flex items-center space-x-4">
-                <span className="w-10 h-10 flex items-center justify-center bg-slate-100 font-bold text-lg text-slate-700 rounded-full">
-                  {atleta.jersey_number ? `#${atleta.jersey_number}` : '-'}
-                </span>
-                <div>
-                  <div className="font-semibold text-lg">
-                    {atleta.first_name} {atleta.last_name}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {atleta.codice_fiscale || ''} {atleta.email ? `• ${atleta.email}` : ''}
-                  </div>
-                </div>
+      return (
+        <li key={atleta.id} className="p-4 bg-white shadow rounded-lg flex justify-between items-center text-slate-900 border">
+          <div className="flex items-center space-x-4">
+            <span className="w-10 h-10 flex items-center justify-center bg-slate-100 font-bold text-lg text-slate-700 rounded-full">
+              {atleta.jersey_number ? `#${atleta.jersey_number}` : '-'}
+            </span>
+            <div>
+              <div className="font-semibold text-lg">
+                {nomeMostrato} {cognomeMostrato}
               </div>
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">
-                {atleta.ruolo || 'Non assegnato'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+              <div className="text-xs text-slate-500">
+                {atleta.codice_fiscale || ''} {atleta.email ? `• ${atleta.email}` : ''}
+              </div>
+            </div>
+          </div>
+          <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">
+            {ruoloMostrato}
+          </span>
+        </li>
+      );
+    })}
+  </ul>
+)}
+
     </div>
   );
 }
