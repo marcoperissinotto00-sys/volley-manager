@@ -32,6 +32,7 @@ interface SetStatRow {
   user_id: string;
   set_number: number;
   played_as_libero: boolean;
+  is_starter: boolean;
 }
 
 interface PlayerRow {
@@ -150,6 +151,7 @@ function MatchPageContent() {
         user_id: playerId,
         set_number: setNumber,
         played_as_libero: false,
+        is_starter: true,
       }]);
     }
 
@@ -164,6 +166,19 @@ function MatchPageContent() {
     await supabase.from('match_set_stats').update({ played_as_libero: !existing.played_as_libero }).eq('id', existing.id);
     const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', match.id);
     setSetStats((data || []) as SetStatRow[]);
+  }
+
+  async function toggleStarter(playerId: string, setNumber: number) {
+    if (!match) return;
+    const existing = setStats.find((s) => s.match_id === match.id && s.user_id === playerId && s.set_number === setNumber);
+    if (!existing) return;
+    await supabase.from('match_set_stats').update({ is_starter: !existing.is_starter }).eq('id', existing.id);
+    const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', match.id);
+    setSetStats((data || []) as SetStatRow[]);
+  }
+
+  function startersInSet(setNumber: number) {
+    return setStats.filter((s) => s.set_number === setNumber && s.is_starter).length;
   }
 
   function playersInSet(setNumber: number) {
@@ -181,10 +196,6 @@ function MatchPageContent() {
     ? players.filter((p) => checkedInPlayers.includes(p.id))
     : players;
 
-  const currentResult = (match?.sets_won != null && match?.sets_lost != null)
-    ? `${match.sets_won} – ${match.sets_lost}`
-    : null;
-
   return (
     <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-5">
 
@@ -198,7 +209,6 @@ function MatchPageContent() {
       {/* Intestazione — dati dall'evento */}
       <div className="bg-slate-900 text-white rounded-xl p-5 space-y-3">
         <div className="text-xs text-slate-400 uppercase tracking-wider">{formatDate(event.date_time)}</div>
-        <h1 className="text-2xl font-bold leading-tight">{event.title}</h1>
 
         {/* Avversario e sede — letti dall'evento */}
         <div className="flex items-center gap-3 flex-wrap">
@@ -210,11 +220,6 @@ function MatchPageContent() {
           {event.is_home_game != null && (
             <span className="text-slate-300 text-sm">
               {event.is_home_game ? '🏠 Casa' : '✈️ Trasferta'}
-            </span>
-          )}
-          {currentResult && (
-            <span className="ml-auto font-mono text-2xl font-bold text-white tracking-wider">
-              {currentResult}
             </span>
           )}
         </div>
@@ -236,31 +241,31 @@ function MatchPageContent() {
       {/* Risultato */}
       <div className="bg-white rounded-xl shadow p-5 space-y-3">
         <h2 className="font-semibold text-slate-800">Risultato finale</h2>
-        <div className="flex items-end gap-4 flex-wrap">
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Set vinti</label>
+        <div className="bg-slate-900 rounded-xl p-5 flex items-center justify-center gap-5">
+          <div className="text-center">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Set vinti</div>
             <input type="number" min="0" max="3" value={setsWon}
               onChange={(e) => { setSetsWon(e.target.value); setResultSaved(false); }}
-              className="w-20 p-2.5 border rounded-lg text-center text-slate-900 font-bold text-lg" />
+              className="w-16 bg-transparent text-center text-amber-400 font-mono font-bold text-5xl tabular-nums outline-none border-b-2 border-slate-700 focus:border-amber-400 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
           </div>
-          <span className="text-2xl font-bold text-slate-400 pb-1">–</span>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Set persi</label>
+          <span className="text-slate-600 font-mono font-bold text-5xl pb-1">–</span>
+          <div className="text-center">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Set persi</div>
             <input type="number" min="0" max="3" value={setsLost}
               onChange={(e) => { setSetsLost(e.target.value); setResultSaved(false); }}
-              className="w-20 p-2.5 border rounded-lg text-center text-slate-900 font-bold text-lg" />
+              className="w-16 bg-transparent text-center text-amber-400 font-mono font-bold text-5xl tabular-nums outline-none border-b-2 border-slate-700 focus:border-amber-400 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
           </div>
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Note partita</label>
-            <input type="text" value={matchNotes}
-              onChange={(e) => { setMatchNotes(e.target.value); setResultSaved(false); }}
-              placeholder="Es. ottima difesa nel 3° set"
-              className="w-full p-2.5 border rounded-lg text-slate-900 text-base" />
-          </div>
-          <button onClick={saveResult} disabled={savingResult}
-            className={`px-4 py-2.5 rounded-lg font-semibold text-sm active:scale-95 transition-all ${resultSaved ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'} disabled:opacity-50`}>
-            {savingResult ? 'Salvo…' : resultSaved ? '✓ Salvato' : 'Salva'}
-          </button>
+        </div>
+        <button onClick={saveResult} disabled={savingResult}
+          className={`w-full py-2.5 rounded-lg font-semibold text-sm active:scale-95 transition-all ${resultSaved ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'} disabled:opacity-50`}>
+          {savingResult ? 'Salvo…' : resultSaved ? '✓ Salvato' : 'Salva'}
+        </button>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Note partita</label>
+          <input type="text" value={matchNotes}
+            onChange={(e) => { setMatchNotes(e.target.value); setResultSaved(false); }}
+            placeholder="Es. ottima difesa nel 3° set"
+            className="w-full p-2.5 border rounded-lg text-slate-900 text-base" />
         </div>
       </div>
 
@@ -293,7 +298,9 @@ function MatchPageContent() {
         <div className="bg-white rounded-xl shadow divide-y">
           <div className="px-4 py-3 bg-slate-50 rounded-t-xl flex justify-between items-center">
             <span className="font-semibold text-slate-700">Set {activeSet}</span>
-            <span className="text-sm text-slate-500">{playersInSet(activeSet).length} in campo</span>
+            <span className="text-sm text-slate-500">
+              {startersInSet(activeSet)} titolari · {playersInSet(activeSet).length - startersInSet(activeSet)} cambi
+            </span>
           </div>
 
           {availablePlayers.length === 0 ? (
@@ -316,11 +323,18 @@ function MatchPageContent() {
                     </div>
                   </label>
                   {inField && (
-                    <label className="flex items-center gap-1.5 cursor-pointer text-sm shrink-0 pr-4 py-3">
-                      <input type="checkbox" checked={!!stat?.played_as_libero} onChange={() => toggleLibero(p.id, activeSet)}
-                        className="w-5 h-5 accent-amber-500" />
-                      <span className={`text-xs font-semibold ${stat?.played_as_libero ? 'text-amber-700' : 'text-slate-400'}`}>Libero</span>
-                    </label>
+                    <div className="flex items-center gap-3 pr-4 py-3 shrink-0">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-sm shrink-0">
+                        <input type="checkbox" checked={!stat?.is_starter} onChange={() => toggleStarter(p.id, activeSet)}
+                          className="w-5 h-5 accent-purple-500" />
+                        <span className={`text-xs font-semibold ${!stat?.is_starter ? 'text-purple-700' : 'text-slate-400'}`}>Cambio</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-sm shrink-0">
+                        <input type="checkbox" checked={!!stat?.played_as_libero} onChange={() => toggleLibero(p.id, activeSet)}
+                          className="w-5 h-5 accent-amber-500" />
+                        <span className={`text-xs font-semibold ${stat?.played_as_libero ? 'text-amber-700' : 'text-slate-400'}`}>Libero</span>
+                      </label>
+                    </div>
                   )}
                 </div>
               );

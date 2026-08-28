@@ -51,15 +51,15 @@ export default function NavBar() {
         className="fixed bottom-0 inset-x-0 z-30 bg-white border-t"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="max-w-4xl mx-auto grid grid-cols-2">
+        <div className="max-w-4xl mx-auto grid grid-cols-2 gap-2 p-2">
           {TABS.map((tab) => {
             const active = pathname?.startsWith(tab.href);
             return (
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={`flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-semibold active:bg-slate-50 transition-colors ${
-                  active ? 'text-blue-600' : 'text-slate-500'
+                className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                  active ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 active:bg-slate-100'
                 }`}
               >
                 <span className="text-xl leading-none">{tab.icon}</span>

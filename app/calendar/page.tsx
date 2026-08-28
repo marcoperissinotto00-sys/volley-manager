@@ -88,6 +88,7 @@ function CalendarPageContent() {
   const { user, isCoach } = useAuth();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [attendances, setAttendances] = useState<Record<string, AttendanceRow[]>>({});
+  const [matchResults, setMatchResults] = useState<Record<string, { sets_won: number | null; sets_lost: number | null }>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -170,6 +171,21 @@ function CalendarPageContent() {
         } else {
           setAttendances({});
         }
+
+        const matchIds = eventsData.filter((e) => e.event_type === 'match').map((e) => e.id);
+        if (matchIds.length > 0) {
+          const { data: matchesData } = await supabase
+            .from('matches')
+            .select('event_id, sets_won, sets_lost')
+            .in('event_id', matchIds);
+          const resultsMap: Record<string, { sets_won: number | null; sets_lost: number | null }> = {};
+          (matchesData || []).forEach((m) => {
+            resultsMap[m.event_id] = { sets_won: m.sets_won, sets_lost: m.sets_lost };
+          });
+          setMatchResults(resultsMap);
+        } else {
+          setMatchResults({});
+        }
       }
     }
     setLoading(false);
@@ -220,16 +236,18 @@ function CalendarPageContent() {
       alert('Inserisci il nome dell\'avversario per le partite.');
       return;
     }
-    if (eventType !== 'match' && !trainingTitle) {
+    if (eventType === 'event' && !trainingTitle) {
       alert('Inserisci un titolo per l\'evento.');
       return;
     }
     setSubmitting(true);
 
-    // Per le partite il titolo è generato automaticamente
+    // Per le partite e gli allenamenti il titolo è generato automaticamente
     const autoTitle = eventType === 'match'
       ? `vs ${opponentName}`
-      : trainingTitle;
+      : eventType === 'training'
+        ? 'Allenamento'
+        : trainingTitle;
 
     const payload = {
       title: autoTitle,
@@ -340,12 +358,12 @@ function CalendarPageContent() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Titolo solo per non-partite */}
-            {eventType !== 'match' && (
+            {/* Titolo solo per eventi generici: partite e allenamenti hanno un titolo automatico */}
+            {eventType === 'event' && (
               <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Titolo</label>
                 <input type="text" required value={trainingTitle} onChange={(e) => setTrainingTitle(e.target.value)}
-                  placeholder="Es. Allenamento settimanale"
+                  placeholder="Es. Cena di squadra"
                   className="w-full p-3 border rounded-xl text-slate-900 text-base" />
               </div>
             )}
@@ -429,7 +447,7 @@ function CalendarPageContent() {
               const { dateStr, timeStr } = formatDateTime(ev.date_time);
               const list = attendances[ev.id] || [];
               const mine = user ? list.find((a) => a.user_id === user.id) : undefined;
-              const confirmedList = list.filter((a) => ['present', 'late'].includes(a.status));
+              const confirmedList = list.filter((a) => ['present', 'late', 'maybe'].includes(a.status));
               const checkedInCount = list.filter((a) => a.checked_in).length;
               const open = !!openWho[ev.id];
               const appelloOpen = !!openAppello[ev.id];
@@ -450,11 +468,23 @@ function CalendarPageContent() {
                         {ev.event_type === 'match' && ev.is_home_game != null && (
                           <span className="text-xs text-slate-500">{ev.is_home_game ? '🏠 Casa' : '✈️ Trasferta'}</span>
                         )}
+                        {ev.event_type === 'match' && matchResults[ev.id]?.sets_won != null && matchResults[ev.id]?.sets_lost != null && (
+                          <span className="px-2 py-0.5 bg-slate-900 text-amber-400 font-mono font-bold text-xs rounded-full tabular-nums">
+                            {matchResults[ev.id].sets_won}–{matchResults[ev.id].sets_lost}
+                          </span>
+                        )}
+                        {ev.event_type === 'training' && (
+                          <span className="text-sm font-bold text-slate-900">{dateStr} · {timeStr}</span>
+                        )}
                       </div>
 
-                      {/* Titolo: per partite "vs Avversario", per altri il titolo */}
-                      <div className="text-base font-bold text-slate-900 leading-snug">{eventTitle(ev)}</div>
-                      <div className="text-sm text-slate-500 mt-0.5">{dateStr} · {timeStr}</div>
+                      {/* Titolo: per partite "vs Avversario", per eventi generici il titolo; gli allenamenti non ne hanno bisogno (il badge basta) */}
+                      {ev.event_type !== 'training' && (
+                        <>
+                          <div className="text-base font-bold text-slate-900 leading-snug">{eventTitle(ev)}</div>
+                          <div className="text-sm text-slate-500 mt-0.5">{dateStr} · {timeStr}</div>
+                        </>
+                      )}
 
                       {ev.location && (
                         <div className="flex items-center gap-2 mt-1">
@@ -541,6 +571,7 @@ function CalendarPageContent() {
                                 <span className={`text-sm font-medium ${a.checked_in ? 'text-green-800 font-semibold' : 'text-slate-600'}`}>
                                   {nome}
                                   {a.status === 'late' && <span className="ml-1 text-xs text-amber-600">(in ritardo)</span>}
+                                  {a.status === 'maybe' && <span className="ml-1 text-xs text-amber-600">(forse)</span>}
                                 </span>
                               </label>
                             );
