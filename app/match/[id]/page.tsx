@@ -161,39 +161,62 @@ function MatchPageContent() {
     if (!matchId) return;
 
     const existing = setStats.find((s) => s.match_id === matchId && s.user_id === playerId && s.set_number === setNumber);
-    const { error } = existing
-      ? await supabase.from('match_set_stats').delete().eq('id', existing.id)
-      : await supabase.from('match_set_stats').insert([{
-          match_id: matchId,
-          user_id: playerId,
-          set_number: setNumber,
-          played_as_libero: false,
-          is_starter: true,
-        }]);
-    if (error) showError(`Impossibile aggiornare la formazione: ${error.message}`);
 
-    const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', matchId);
-    setSetStats((data || []) as SetStatRow[]);
+    if (existing) {
+      // Aggiornamento ottimistico: rimuovi subito dallo schermo, ripristina se la scrittura fallisce
+      setSetStats((prev) => prev.filter((s) => s.id !== existing.id));
+      const { error } = await supabase.from('match_set_stats').delete().eq('id', existing.id);
+      if (error) {
+        showError(`Impossibile aggiornare la formazione: ${error.message}`);
+        setSetStats((prev) => [...prev, existing]);
+      }
+    } else {
+      const tempId = `temp-${playerId}-${setNumber}`;
+      const optimisticRow: SetStatRow = {
+        id: tempId, match_id: matchId, user_id: playerId, set_number: setNumber,
+        played_as_libero: false, is_starter: true,
+      };
+      setSetStats((prev) => [...prev, optimisticRow]);
+      const { data, error } = await supabase.from('match_set_stats').insert([{
+        match_id: matchId,
+        user_id: playerId,
+        set_number: setNumber,
+        played_as_libero: false,
+        is_starter: true,
+      }]).select().single();
+      if (error) {
+        showError(`Impossibile aggiornare la formazione: ${error.message}`);
+        setSetStats((prev) => prev.filter((s) => s.id !== tempId));
+      } else if (data) {
+        setSetStats((prev) => prev.map((s) => (s.id === tempId ? (data as SetStatRow) : s)));
+      }
+    }
   }
 
   async function toggleLibero(playerId: string, setNumber: number) {
     if (!match) return;
     const existing = setStats.find((s) => s.match_id === match.id && s.user_id === playerId && s.set_number === setNumber);
     if (!existing) return;
-    const { error } = await supabase.from('match_set_stats').update({ played_as_libero: !existing.played_as_libero }).eq('id', existing.id);
-    if (error) showError(`Impossibile aggiornare il libero: ${error.message}`);
-    const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', match.id);
-    setSetStats((data || []) as SetStatRow[]);
+    const nextValue = !existing.played_as_libero;
+    setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, played_as_libero: nextValue } : s)));
+    const { error } = await supabase.from('match_set_stats').update({ played_as_libero: nextValue }).eq('id', existing.id);
+    if (error) {
+      showError(`Impossibile aggiornare il libero: ${error.message}`);
+      setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, played_as_libero: existing.played_as_libero } : s)));
+    }
   }
 
   async function toggleStarter(playerId: string, setNumber: number) {
     if (!match) return;
     const existing = setStats.find((s) => s.match_id === match.id && s.user_id === playerId && s.set_number === setNumber);
     if (!existing) return;
-    const { error } = await supabase.from('match_set_stats').update({ is_starter: !existing.is_starter }).eq('id', existing.id);
-    if (error) showError(`Impossibile aggiornare titolare/cambio: ${error.message}`);
-    const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', match.id);
-    setSetStats((data || []) as SetStatRow[]);
+    const nextValue = !existing.is_starter;
+    setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, is_starter: nextValue } : s)));
+    const { error } = await supabase.from('match_set_stats').update({ is_starter: nextValue }).eq('id', existing.id);
+    if (error) {
+      showError(`Impossibile aggiornare titolare/cambio: ${error.message}`);
+      setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, is_starter: existing.is_starter } : s)));
+    }
   }
 
   function startersInSet(setNumber: number) {

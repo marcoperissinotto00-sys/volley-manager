@@ -20,7 +20,7 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
 const STATUS_CONFIG: { value: AttendanceStatus; label: string; activeClass: string }[] = [
   { value: 'present', label: '✓ Ci sono', activeClass: 'bg-blue-600 border-blue-600 text-white' },
   { value: 'late', label: '⏱ In ritardo', activeClass: 'bg-amber-500 border-amber-500 text-white' },
-  { value: 'maybe', label: '? Forse', activeClass: 'bg-amber-300 border-amber-300 text-slate-900' },
+  { value: 'maybe', label: '? Forse', activeClass: 'bg-violet-500 border-violet-500 text-white' },
   { value: 'absent', label: '✕ Non ci sono', activeClass: 'bg-red-500 border-red-500 text-white' },
 ];
 
@@ -52,6 +52,12 @@ function formatDateTime(iso: string) {
   const dateStr = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
   const timeStr = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   return { dateStr, timeStr };
+}
+
+function toDateTimeLocal(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function isToday(iso: string) {
@@ -86,13 +92,14 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lon: numb
 }
 
 function CalendarPageContent() {
-  const { user, isCoach } = useAuth();
+  const { user, profile, isCoach } = useAuth();
   const { showError } = useToast();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [attendances, setAttendances] = useState<Record<string, AttendanceRow[]>>({});
   const [matchResults, setMatchResults] = useState<Record<string, { sets_won: number | null; sets_lost: number | null }>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [openWho, setOpenWho] = useState<Record<string, boolean>>({});
@@ -228,10 +235,29 @@ function CalendarPageContent() {
     setEventType('training'); setDateTime('');
     setLocation(''); setNotes(''); setOpponentName('');
     setIsHomeGame(true); setGeoResult(null); setGeoError(null);
-    setTrainingTitle(''); setShowForm(false);
+    setTrainingTitle(''); setShowForm(false); setEditingEventId(null);
   }
 
-  async function handleCreateEvent(e: FormEvent) {
+  function handleEditEvent(ev: EventRow) {
+    setEditingEventId(ev.id);
+    setEventType(ev.event_type);
+    setDateTime(toDateTimeLocal(ev.date_time));
+    setLocation(ev.location || '');
+    setNotes(ev.notes || '');
+    setOpponentName(ev.opponent_name || '');
+    setIsHomeGame(ev.is_home_game ?? true);
+    setTrainingTitle(ev.event_type === 'event' ? ev.title : '');
+    setGeoResult(
+      ev.latitude != null && ev.longitude != null && ev.maps_url
+        ? { lat: ev.latitude, lon: ev.longitude, mapsUrl: ev.maps_url }
+        : null
+    );
+    setGeoError(null);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function handleSubmitEvent(e: FormEvent) {
     e.preventDefault();
     if (!dateTime) return;
     if (eventType === 'match' && !opponentName) {
@@ -257,7 +283,6 @@ function CalendarPageContent() {
       date_time: new Date(dateTime).toISOString(),
       location: location || null,
       notes: notes || null,
-      created_by: user?.id,
       opponent_name: eventType === 'match' ? opponentName : null,
       is_home_game: eventType === 'match' ? isHomeGame : null,
       latitude: geoResult?.lat ?? null,
@@ -265,7 +290,9 @@ function CalendarPageContent() {
       maps_url: geoResult?.mapsUrl ?? null,
     };
 
-    const { error } = await supabase.from('events').insert([payload]);
+    const { error } = editingEventId
+      ? await supabase.from('events').update(payload).eq('id', editingEventId)
+      : await supabase.from('events').insert([{ ...payload, created_by: user?.id }]);
     setSubmitting(false);
     if (error) { showError(`Impossibile salvare l'evento: ${error.message}`); return; }
     resetForm();
@@ -288,23 +315,52 @@ function CalendarPageContent() {
 
   async function setRsvp(eventId: string, status: AttendanceStatus) {
     if (!user) return;
-    const current = attendances[eventId]?.find((a) => a.user_id === user.id);
-    const { error } = current && current.status === status
-      ? await supabase.from('attendances').delete().eq('id', current.id)
+    const prevList = attendances[eventId] || [];
+    const current = prevList.find((a) => a.user_id === user.id);
+    const removing = !!(current && current.status === status);
+
+    // Aggiornamento ottimistico: lo schermo reagisce subito, si corregge solo in caso di errore
+    const optimisticList = removing
+      ? prevList.filter((a) => a.id !== current!.id)
+      : current
+        ? prevList.map((a) => (a.id === current.id ? { ...a, status } : a))
+        : [...prevList, {
+            id: `temp-${eventId}-${user.id}`, event_id: eventId, user_id: user.id, status, checked_in: false,
+            users: profile ? { first_name: profile.first_name, last_name: profile.last_name } : undefined,
+          }];
+    setAttendances((prev) => ({ ...prev, [eventId]: optimisticList }));
+
+    const { error } = removing
+      ? await supabase.from('attendances').delete().eq('id', current!.id)
       : await supabase.from('attendances').upsert(
           { event_id: eventId, user_id: user.id, status },
           { onConflict: 'event_id,user_id' }
         );
-    if (error) showError(`Impossibile salvare la risposta: ${error.message}`);
-    fetchAll(currentPage, filterTab, showHistory);
+
+    if (error) {
+      showError(`Impossibile salvare la risposta: ${error.message}`);
+      setAttendances((prev) => ({ ...prev, [eventId]: prevList }));
+    } else {
+      fetchAll(currentPage, filterTab, showHistory);
+    }
   }
 
   async function toggleCheckin(attendance: AttendanceRow) {
+    const nextValue = !attendance.checked_in;
+    setAttendances((prev) => ({
+      ...prev,
+      [attendance.event_id]: (prev[attendance.event_id] || []).map((a) => (a.id === attendance.id ? { ...a, checked_in: nextValue } : a)),
+    }));
     const { error } = await supabase.from('attendances')
-      .update({ checked_in: !attendance.checked_in })
+      .update({ checked_in: nextValue })
       .eq('id', attendance.id);
-    if (error) showError(`Impossibile aggiornare la presenza: ${error.message}`);
-    fetchAll(currentPage, filterTab, showHistory);
+    if (error) {
+      showError(`Impossibile aggiornare la presenza: ${error.message}`);
+      setAttendances((prev) => ({
+        ...prev,
+        [attendance.event_id]: (prev[attendance.event_id] || []).map((a) => (a.id === attendance.id ? { ...a, checked_in: !nextValue } : a)),
+      }));
+    }
   }
 
   const totalPages = Math.ceil(totalEvents / PAGE_SIZE) || 1;
@@ -329,7 +385,7 @@ function CalendarPageContent() {
             {showHistory ? '← Prossimi' : '🕐 Storico'}
           </button>
           {isCoach && !showHistory && (
-            <button onClick={() => setShowForm((v) => !v)}
+            <button onClick={() => (showForm ? resetForm() : setShowForm(true))}
               className="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition-all text-sm">
               {showForm ? '✕' : '+ Nuovo'}
             </button>
@@ -349,18 +405,26 @@ function CalendarPageContent() {
 
       {/* Form nuovo evento */}
       {showForm && isCoach && (
-        <form onSubmit={handleCreateEvent} className="bg-white p-5 rounded-xl shadow space-y-4">
-          <h2 className="font-semibold text-slate-800">Nuovo appuntamento</h2>
+        <form onSubmit={handleSubmitEvent} className="bg-white p-5 rounded-xl shadow space-y-4">
+          <h2 className="font-semibold text-slate-800">
+            {editingEventId ? 'Modifica appuntamento' : 'Nuovo appuntamento'}
+          </h2>
 
-          {/* Tipo */}
-          <div className="flex gap-2">
-            {(['training', 'match', 'event'] as EventType[]).map((t) => (
-              <button key={t} type="button" onClick={() => setEventType(t)}
-                className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${eventType === t ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'}`}>
-                {EVENT_TYPE_LABELS[t]}
-              </button>
-            ))}
-          </div>
+          {/* Tipo — non modificabile in modifica, per non disallineare i dati collegati (es. partite) */}
+          {editingEventId ? (
+            <span className="inline-block px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold uppercase rounded-full">
+              {EVENT_TYPE_LABELS[eventType]}
+            </span>
+          ) : (
+            <div className="flex gap-2">
+              {(['training', 'match', 'event'] as EventType[]).map((t) => (
+                <button key={t} type="button" onClick={() => setEventType(t)}
+                  className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${eventType === t ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'}`}>
+                  {EVENT_TYPE_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Titolo solo per eventi generici: partite e allenamenti hanno un titolo automatico */}
@@ -432,7 +496,7 @@ function CalendarPageContent() {
           <div className="flex justify-end gap-3">
             <button type="button" onClick={resetForm} className="px-4 py-2.5 bg-slate-200 text-slate-700 font-medium rounded-xl">Annulla</button>
             <button type="submit" disabled={submitting} className="px-6 py-2.5 bg-green-600 text-white font-semibold rounded-xl disabled:opacity-50">
-              {submitting ? 'Salvataggio…' : 'Salva'}
+              {submitting ? 'Salvataggio…' : editingEventId ? 'Salva modifiche' : 'Salva'}
             </button>
           </div>
         </form>
@@ -522,7 +586,10 @@ function CalendarPageContent() {
                         </div>
                       )}
                       {isCoach && (
-                        <button onClick={() => deleteEvent(ev)} className="text-xs text-slate-400 active:text-red-700 px-2 py-1.5 -mr-2">Elimina</button>
+                        <div className="flex items-center gap-1 -mr-2">
+                          <button onClick={() => handleEditEvent(ev)} className="text-xs text-slate-400 active:text-blue-700 px-2 py-1.5">Modifica</button>
+                          <button onClick={() => deleteEvent(ev)} className="text-xs text-slate-400 active:text-red-700 px-2 py-1.5">Elimina</button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -576,7 +643,7 @@ function CalendarPageContent() {
                                 <span className={`text-sm font-medium ${a.checked_in ? 'text-green-800 font-semibold' : 'text-slate-600'}`}>
                                   {nome}
                                   {a.status === 'late' && <span className="ml-1 text-xs text-amber-600">(in ritardo)</span>}
-                                  {a.status === 'maybe' && <span className="ml-1 text-xs text-amber-600">(forse)</span>}
+                                  {a.status === 'maybe' && <span className="ml-1 text-xs text-violet-600">(forse)</span>}
                                 </span>
                               </label>
                             );

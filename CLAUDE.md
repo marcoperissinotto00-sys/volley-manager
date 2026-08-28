@@ -10,19 +10,22 @@
 ## Struttura cartelle rilevante
 ```
 app/
-  layout.tsx          — Root layout con AuthProvider e NavBar
+  layout.tsx          — Root layout con AuthProvider, ToastProvider e NavBar
+  manifest.ts          — Manifest PWA (installabile su home screen)
+  icon.png / apple-icon.png — Icone app (placeholder, in attesa di versione definitiva)
   page.tsx            — Redirect a /calendar
   login/page.tsx      — Login via Supabase Auth
   register/page.tsx   — Registrazione (ruolo default: player)
-  calendar/page.tsx   — Calendario eventi con RSVP, appello, storico
-  players/page.tsx    — Rosa squadra (users + athlete_details)
-  match/[id]/page.tsx — Gestione partita: formazioni per set + risultato
+  calendar/page.tsx   — Calendario eventi con RSVP, appello, storico, crea/modifica/elimina evento
+  players/page.tsx    — Rosa squadra (users + athlete_details) + statistiche partite
+  match/[id]/page.tsx — Gestione partita: formazioni per set (titolare/cambio/libero) + risultato
 components/
-  NavBar.tsx          — Barra navigazione con logout e badge ruolo
+  NavBar.tsx          — Header con identità/logout + bottom tab bar (Calendario/Rosa)
   RequireAuth.tsx     — Protezione pagine (coachOnly per /match)
 lib/
   supabase.ts         — Client Supabase (chiavi da .env.local)
   auth-context.tsx    — Context React: user, profile, isCoach, signOut
+  toast-context.tsx   — Context React: showError(messaggio), notifiche di errore uniformi
 ```
 
 ## Schema database Supabase
@@ -83,6 +86,7 @@ lib/
 - `user_id` uuid FK → users.id
 - `set_number` int4 (1–5)
 - `played_as_libero` bool
+- `is_starter` bool default true — titolare (true) o cambio (false) in quel set
 
 ### Funzioni e trigger
 - `public.is_coach_or_admin()` — SECURITY DEFINER, usata nelle RLS policy per evitare ricorsione
@@ -106,27 +110,31 @@ Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evi
 - Paginazione: 10 eventi per pagina
 - RSVP per ogni evento: Ci sono / In ritardo / Forse / Non ci sono (toggle)
 - "Chi ha risposto": lista nomi per stato
-- **Appello presenze** (solo coach): spunta chi è fisicamente presente (`checked_in`)
-- Per le partite: pulsante "🏐 Gestisci partita →" (solo coach)
-- Form nuovo evento (solo coach):
-  - Tipo: Allenamento / Partita / Evento
-  - Per partite: avversario (obbligatorio) + casa/trasferta — il titolo è auto-generato
-  - Per allenamenti/eventi: campo titolo manuale
-  - Luogo con geocodifica automatica via Nominatim (OpenStreetMap, gratuito)
+- **Appello presenze** (solo coach): spunta chi è fisicamente presente (`checked_in`); l'elenco include chi ha risposto Ci sono, In ritardo o Forse (non chi ha risposto Non ci sono)
+- Per le partite: pulsante "🏐 Gestisci partita →" (solo coach) e badge risultato (es. "3–0") in lista una volta salvato
+- Form nuovo evento / modifica evento esistente (solo coach, pulsanti "Modifica"/"Elimina" su ogni card):
+  - Tipo: Allenamento / Partita / Evento — non modificabile in fase di modifica (per non disallineare i dati collegati, es. `matches`)
+  - Per partite: avversario (obbligatorio) + casa/trasferta — il titolo è auto-generato ("vs Avversario"), non mostrato in card (c'è già il badge)
+  - Per allenamenti: titolo auto-generato ("Allenamento"), non mostrato in card — la data/ora è evidenziata accanto al badge
+  - Per eventi generici: campo titolo manuale
+  - Luogo con geocodifica automatica via Nominatim (OpenStreetMap, gratuito); le coordinate esistenti si mantengono in modifica se il campo luogo non viene toccato
 
 ### Gestione partita (`/match/[id]`)
 - Accessibile solo a coach/admin
 - Avversario e sede letti dall'evento (non reinseriti)
 - **Prima**: formazioni per set (tab Set 1–5)
-  - Lista giocatori con check-box "in campo" e toggle "Libero"
+  - Lista giocatori con check-box "in campo", toggle "Titolare/Cambio" (`is_starter`, colonna aggiunta manualmente via migrazione) e toggle "Libero"
+  - Contatore "X titolari · Y cambi" nell'header del set
   - Se c'è check-in, mostra solo i giocatori presenti; altrimenti tutti i giocatori attivi
-  - Salvataggio automatico per ogni spunta
-- **Poi**: risultato finale (set vinti–persi) + note partita
+  - Salvataggio automatico e ottimistico per ogni spunta (vedi Convenzioni di sviluppo)
+- **Poi**: risultato finale (set vinti–persi, stile tabellone elettronico) + note partita — richiede pulsante "Salva" esplicito, non è automatico come le formazioni
+- Intestazione partita: solo data, avversario, sede, luogo — niente titolo evento né risultato duplicato (il risultato si vede solo nel tabellone)
 
 ### Rosa squadra (`/players`)
-- Lista tutti i giocatori attivi (da `users`)
+- Lista tutti i giocatori (attivi e non, questi ultimi con opacità ridotta), da `users`
 - Solo coach/admin vedono i pulsanti Modifica e Disattiva
-- Form modifica: ruolo squadra, ruolo in campo, numero maglia + anagrafica completa (da `athlete_details`)
+- **"📊 Statistiche partite"** (solo coach, sezione collassabile): per ogni giocatore, partite giocate (match distinti), volte titolare, volte cambio — aggregato client-side da `match_set_stats`
+- Form modifica: ruolo squadra, ruolo in campo, numero maglia sempre visibili; anagrafica, residenza, certificati sono sezioni collassabili (aperte di default solo se il giocatore ha già dati in quella sezione)
 - Nuovi giocatori si aggiungono registrandosi da `/register`
 
 ## Convenzioni di sviluppo
@@ -135,6 +143,16 @@ Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evi
 - Le query Supabase usano fetch separato (prima attendances, poi users per nomi) per evitare errori HTTP 300 da join nested
 - Stile mobile-first: bottoni con `py-2.5`, `rounded-xl`, `active:scale-95`
 - ESLint: i `useEffect` con fetch usano `// eslint-disable-next-line react-hooks/set-state-in-effect`
+- Errori verso l'utente: mai `alert()`, usare `useToast()` da `lib/toast-context.tsx` (`showError(messaggio)`)
+- Scritture su Supabase toccate da tap ripetuti (RSVP, appello, formazioni, titolare/cambio) aggiornano lo stato locale in modo ottimistico prima della risposta di rete, e lo ripristinano solo se la scrittura fallisce (vedi `setRsvp`/`toggleCheckin` in `app/calendar/page.tsx` e `togglePlayerInSet`/`toggleLibero`/`toggleStarter` in `app/match/[id]/page.tsx`)
+
+## Palette colori (semantica, non un design system formale)
+- **Blu** (`blue-600`): azione primaria, RSVP "Ci sono", badge ruolo giocatore, tab attiva
+- **Ambra** (`amber-400/500`): partite, tabellone risultato, RSVP "In ritardo", Libero, DAE/antincendio
+- **Violetto** (`violet-500`): stati "secondari/alternativi" — RSVP "Forse", toggle "Cambio" in formazione
+- **Verde**: conferma/salvato, presenza fisica confermata (appello)
+- **Rosso**: eliminazione, RSVP "Non ci sono", errori/toast
+- **Slate**: neutro — allenamenti, stati inattivi/disabilitati
 
 ## Funzionalità da implementare (backlog)
 - [ ] Vista calendario a griglia mensile (punto 7)
@@ -143,7 +161,8 @@ Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evi
 - [ ] Notifiche push o email quando viene creato un evento
 - [ ] Deploy su Vercel
 - [ ] SMTP reale per email di conferma registrazione (ora disabilitata per test)
-- [ ] Statistiche giocatori (presenze, partite giocate, set giocati)
+- [x] Statistiche giocatori: partite giocate, volte titolare, volte cambio (Rosa squadra → "📊 Statistiche partite", solo coach)
+- [ ] Statistiche giocatori: presenze e set giocati (manca ancora)
 - [ ] Pagina profilo personale per ogni giocatore
 
 ## Note importanti
