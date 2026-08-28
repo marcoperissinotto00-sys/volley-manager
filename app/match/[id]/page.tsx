@@ -272,7 +272,7 @@ function MatchPageContent() {
             <span>📍 {event.location}</span>
             {event.maps_url && (
               <a href={event.maps_url} target="_blank" rel="noopener noreferrer"
-                className="text-blue-400 hover:text-blue-300 hover:underline text-xs px-2 py-1.5 -my-1.5">
+                className="inline-flex items-center px-2.5 py-1 bg-blue-500/20 border border-blue-400/40 text-blue-300 text-xs font-semibold rounded-lg active:scale-95 transition-all">
                 Apri Maps →
               </a>
             )}

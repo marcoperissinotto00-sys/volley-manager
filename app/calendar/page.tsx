@@ -73,6 +73,18 @@ function eventTitle(ev: EventRow): string {
   return ev.title || '—';
 }
 
+function whatsappShareUrl(ev: EventRow): string {
+  const { dateStr, timeStr } = formatDateTime(ev.date_time);
+  const lines = [
+    `🏐 ${EVENT_TYPE_LABELS[ev.event_type]}: ${eventTitle(ev)}`,
+    `📅 ${dateStr} · ${timeStr}`,
+  ];
+  if (ev.location) lines.push(`📍 ${ev.location}`);
+  if (ev.maps_url) lines.push(ev.maps_url);
+  if (ev.notes) lines.push(`📝 ${ev.notes}`);
+  return `https://api.whatsapp.com/send?text=${encodeURIComponent(lines.join('\n'))}`;
+}
+
 async function geocodeAddress(address: string): Promise<{ lat: number; lon: number; mapsUrl: string } | null> {
   if (!address.trim()) return null;
   try {
@@ -479,7 +491,7 @@ function CalendarPageContent() {
               <div className="mt-2 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                 <span>📍 Posizione trovata</span>
                 <a href={geoResult.mapsUrl} target="_blank" rel="noopener noreferrer"
-                  className="ml-auto text-blue-600 hover:underline text-xs font-medium px-2 py-1.5 -my-1.5 -mr-1">Verifica →</a>
+                  className="ml-auto px-2.5 py-1 bg-blue-600 text-white text-xs font-semibold rounded-lg active:scale-95 transition-all">Verifica →</a>
               </div>
             )}
             {geoError && (
@@ -556,11 +568,11 @@ function CalendarPageContent() {
                       )}
 
                       {ev.location && (
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 flex-wrap mt-1">
                           <span className="text-xs text-slate-500">📍 {ev.location}</span>
                           {ev.maps_url && (
                             <a href={ev.maps_url} target="_blank" rel="noopener noreferrer"
-                              className="text-xs text-blue-600 font-medium px-2 py-1.5 -my-1.5">Maps →</a>
+                              className="inline-flex items-center px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg active:scale-95 transition-all shrink-0">Maps →</a>
                           )}
                         </div>
                       )}
@@ -568,9 +580,20 @@ function CalendarPageContent() {
 
                       {ev.event_type === 'match' && isCoach && (
                         <Link href={`/match/${ev.id}`}
-                          className="inline-flex items-center gap-1 mt-2 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-lg active:scale-95 transition-all">
+                          className="inline-flex items-center gap-1 mt-2 px-3 py-2 bg-amber-500 text-slate-900 text-sm font-bold rounded-lg active:scale-95 transition-all">
                           🏐 Gestisci partita →
                         </Link>
+                      )}
+
+                      {isCoach && (
+                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                          <a href={whatsappShareUrl(ev)} target="_blank" rel="noopener noreferrer"
+                            className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg active:scale-95 transition-all">📤 WhatsApp</a>
+                          <button onClick={() => handleEditEvent(ev)}
+                            className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg active:scale-95 transition-all">Modifica</button>
+                          <button onClick={() => deleteEvent(ev)}
+                            className="px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-lg active:scale-95 transition-all">Elimina</button>
+                        </div>
                       )}
                     </div>
 
@@ -583,12 +606,6 @@ function CalendarPageContent() {
                         <div className="bg-green-700 rounded-xl px-3 py-1.5 text-center min-w-[56px]">
                           <div className="text-white font-bold text-lg leading-none">{String(checkedInCount).padStart(2, '0')}</div>
                           <div className="text-[9px] text-green-300 uppercase tracking-wide mt-0.5">presenti</div>
-                        </div>
-                      )}
-                      {isCoach && (
-                        <div className="flex items-center gap-1 -mr-2">
-                          <button onClick={() => handleEditEvent(ev)} className="text-xs text-slate-400 active:text-blue-700 px-2 py-1.5">Modifica</button>
-                          <button onClick={() => deleteEvent(ev)} className="text-xs text-slate-400 active:text-red-700 px-2 py-1.5">Elimina</button>
                         </div>
                       )}
                     </div>
