@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/lib/toast-context';
 import RequireAuth from '@/components/RequireAuth';
 
 interface EventRow {
@@ -46,6 +47,7 @@ interface PlayerRow {
 function MatchPageContent() {
   const params = useParams();
   const eventId = params.id as string;
+  const { showError } = useToast();
 
   const [event, setEvent] = useState<EventRow | null>(null);
   const [match, setMatch] = useState<MatchRow | null>(null);
@@ -67,12 +69,20 @@ function MatchPageContent() {
   async function fetchAll() {
     setLoading(true);
 
-    const [{ data: evData }, { data: matchData }, { data: playersData }, { data: attData }] = await Promise.all([
+    const [
+      { data: evData, error: evError },
+      { data: matchData, error: matchError },
+      { data: playersData, error: playersError },
+      { data: attData, error: attError },
+    ] = await Promise.all([
       supabase.from('events').select('id, title, date_time, location, opponent_name, is_home_game, maps_url').eq('id', eventId).single(),
       supabase.from('matches').select('*').eq('event_id', eventId).maybeSingle(),
       supabase.from('users').select('id, first_name, last_name, jersey_number, court_role').eq('is_active', true).order('jersey_number', { ascending: true, nullsFirst: false }),
       supabase.from('attendances').select('user_id').eq('event_id', eventId).eq('checked_in', true),
     ]);
+
+    const loadError = evError || matchError || playersError || attError;
+    if (loadError) showError(`Impossibile caricare i dati: ${loadError.message}`);
 
     if (evData) setEvent(evData as EventRow);
 
@@ -82,10 +92,11 @@ function MatchPageContent() {
       setSetsLost(matchData.sets_lost != null ? String(matchData.sets_lost) : '');
       setMatchNotes(matchData.notes || '');
 
-      const { data: realStats } = await supabase
+      const { data: realStats, error: statsError } = await supabase
         .from('match_set_stats')
         .select('*')
         .eq('match_id', matchData.id);
+      if (statsError) showError(`Impossibile caricare le formazioni: ${statsError.message}`);
       setSetStats((realStats || []) as SetStatRow[]);
     }
 
@@ -116,7 +127,10 @@ function MatchPageContent() {
       notes: null,
     }]).select().single();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      showError(`Impossibile creare la partita: ${error?.message ?? 'errore sconosciuto'}`);
+      return null;
+    }
     setMatch(data as MatchRow);
     return data.id;
   }
@@ -126,15 +140,19 @@ function MatchPageContent() {
     const matchId = await ensureMatch();
     if (!matchId) { setSavingResult(false); return; }
 
-    await supabase.from('matches').update({
+    const { error } = await supabase.from('matches').update({
       sets_won: setsWon !== '' ? parseInt(setsWon) : null,
       sets_lost: setsLost !== '' ? parseInt(setsLost) : null,
       notes: matchNotes || null,
     }).eq('id', matchId);
 
     setSavingResult(false);
-    setResultSaved(true);
-    setTimeout(() => setResultSaved(false), 2000);
+    if (error) {
+      showError(`Impossibile salvare il risultato: ${error.message}`);
+    } else {
+      setResultSaved(true);
+      setTimeout(() => setResultSaved(false), 2000);
+    }
     await fetchAll();
   }
 
@@ -143,17 +161,16 @@ function MatchPageContent() {
     if (!matchId) return;
 
     const existing = setStats.find((s) => s.match_id === matchId && s.user_id === playerId && s.set_number === setNumber);
-    if (existing) {
-      await supabase.from('match_set_stats').delete().eq('id', existing.id);
-    } else {
-      await supabase.from('match_set_stats').insert([{
-        match_id: matchId,
-        user_id: playerId,
-        set_number: setNumber,
-        played_as_libero: false,
-        is_starter: true,
-      }]);
-    }
+    const { error } = existing
+      ? await supabase.from('match_set_stats').delete().eq('id', existing.id)
+      : await supabase.from('match_set_stats').insert([{
+          match_id: matchId,
+          user_id: playerId,
+          set_number: setNumber,
+          played_as_libero: false,
+          is_starter: true,
+        }]);
+    if (error) showError(`Impossibile aggiornare la formazione: ${error.message}`);
 
     const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', matchId);
     setSetStats((data || []) as SetStatRow[]);
@@ -163,7 +180,8 @@ function MatchPageContent() {
     if (!match) return;
     const existing = setStats.find((s) => s.match_id === match.id && s.user_id === playerId && s.set_number === setNumber);
     if (!existing) return;
-    await supabase.from('match_set_stats').update({ played_as_libero: !existing.played_as_libero }).eq('id', existing.id);
+    const { error } = await supabase.from('match_set_stats').update({ played_as_libero: !existing.played_as_libero }).eq('id', existing.id);
+    if (error) showError(`Impossibile aggiornare il libero: ${error.message}`);
     const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', match.id);
     setSetStats((data || []) as SetStatRow[]);
   }
@@ -172,7 +190,8 @@ function MatchPageContent() {
     if (!match) return;
     const existing = setStats.find((s) => s.match_id === match.id && s.user_id === playerId && s.set_number === setNumber);
     if (!existing) return;
-    await supabase.from('match_set_stats').update({ is_starter: !existing.is_starter }).eq('id', existing.id);
+    const { error } = await supabase.from('match_set_stats').update({ is_starter: !existing.is_starter }).eq('id', existing.id);
+    if (error) showError(`Impossibile aggiornare titolare/cambio: ${error.message}`);
     const { data } = await supabase.from('match_set_stats').select('*').eq('match_id', match.id);
     setSetStats((data || []) as SetStatRow[]);
   }

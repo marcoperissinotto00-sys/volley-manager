@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { ToastProvider } from "@/lib/toast-context";
 import NavBar from "@/components/NavBar";
 
 const geistSans = Geist({
@@ -36,8 +37,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-slate-50">
         <AuthProvider>
-          <NavBar />
-          <main className="flex-1 pb-24">{children}</main>
+          <ToastProvider>
+            <NavBar />
+            <main className="flex-1 pb-24">{children}</main>
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

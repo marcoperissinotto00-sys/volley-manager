@@ -3,6 +3,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth, UserRole } from '@/lib/auth-context';
+import { useToast } from '@/lib/toast-context';
 import RequireAuth from '@/components/RequireAuth';
 
 const COURT_ROLES = ['palleggiatore', 'schiacciatore', 'opposto', 'centrale', 'libero'];
@@ -42,11 +43,20 @@ interface PlayerRow {
 
 function PlayersPageContent() {
   const { isCoach } = useAuth();
+  const { showError } = useToast();
 
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [showStats, setShowStats] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [matchStats, setMatchStats] = useState<Record<string, { matches: number; starter: number; sub: number }>>({});
+
+  const [anagraficaOpen, setAnagraficaOpen] = useState(false);
+  const [residenzaOpen, setResidenzaOpen] = useState(false);
+  const [certificatiOpen, setCertificatiOpen] = useState(false);
 
   const [jerseyNumber, setJerseyNumber] = useState('');
   const [courtRole, setCourtRole] = useState('');
@@ -69,11 +79,14 @@ function PlayersPageContent() {
 
   async function fetchPlayers() {
     setLoading(true);
-    const [{ data: usersData, error: usersError }, { data: detailsData }] = await Promise.all([
+    const [{ data: usersData, error: usersError }, { data: detailsData, error: detailsError }] = await Promise.all([
       supabase.from('users').select('*').order('jersey_number', { ascending: true, nullsFirst: false }),
       supabase.from('athlete_details').select('*'),
     ]);
 
+    if (usersError || detailsError) {
+      showError(`Impossibile caricare la rosa: ${(usersError ?? detailsError)?.message}`);
+    }
     if (!usersError && usersData) {
       const detailsMap = new Map((detailsData || []).map((d) => [d.user_id, d]));
       const merged = usersData.map((u) => ({ ...u, ...(detailsMap.get(u.id) || {}) }));
@@ -85,7 +98,39 @@ function PlayersPageContent() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch dei dati all'avvio della pagina
     fetchPlayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function fetchMatchStats() {
+    setStatsLoading(true);
+    const { data, error } = await supabase
+      .from('match_set_stats')
+      .select('user_id, match_id, is_starter');
+
+    if (error) {
+      showError(`Impossibile caricare le statistiche: ${error.message}`);
+    } else if (data) {
+      const acc: Record<string, { matches: Set<string>; starter: number; sub: number }> = {};
+      data.forEach((row) => {
+        if (!acc[row.user_id]) acc[row.user_id] = { matches: new Set(), starter: 0, sub: 0 };
+        acc[row.user_id].matches.add(row.match_id);
+        if (row.is_starter) acc[row.user_id].starter += 1;
+        else acc[row.user_id].sub += 1;
+      });
+      const result: Record<string, { matches: number; starter: number; sub: number }> = {};
+      Object.entries(acc).forEach(([userId, v]) => {
+        result[userId] = { matches: v.matches.size, starter: v.starter, sub: v.sub };
+      });
+      setMatchStats(result);
+    }
+    setStatsLoading(false);
+  }
+
+  function toggleStats() {
+    const next = !showStats;
+    setShowStats(next);
+    if (next && Object.keys(matchStats).length === 0) fetchMatchStats();
+  }
 
   function resetForm() {
     setEditingId(null);
@@ -107,6 +152,9 @@ function PlayersPageContent() {
     setScadenzaDae('');
     setAddettoAntincendio(false);
     setScadenzaAntincendio('');
+    setAnagraficaOpen(false);
+    setResidenzaOpen(false);
+    setCertificatiOpen(false);
   }
 
   function handleEdit(p: PlayerRow) {
@@ -129,6 +177,10 @@ function PlayersPageContent() {
     setScadenzaDae(p.scadenza_dae || '');
     setAddettoAntincendio(Boolean(p.addetto_antincendio));
     setScadenzaAntincendio(p.scadenza_antincendio || '');
+    // Apri di default solo le sezioni che contengono già dei dati, per non nascondere info esistenti
+    setAnagraficaOpen(Boolean(p.codice_fiscale || p.data_nascita || p.luogo_nascita || p.prov_nascita || p.cellulare));
+    setResidenzaOpen(Boolean(p.indirizzo_residenza || p.cap || p.citta_residenza || p.prov_residenza));
+    setCertificatiOpen(Boolean(p.scadenza_visita_medica || p.addetto_dae || p.addetto_antincendio));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -170,7 +222,7 @@ function PlayersPageContent() {
     setSubmitting(false);
 
     if (userErr || detailsErr) {
-      alert(`Errore durante il salvataggio: ${userErr?.message || detailsErr?.message}`);
+      showError(`Errore durante il salvataggio: ${userErr?.message || detailsErr?.message}`);
       return;
     }
 
@@ -184,7 +236,7 @@ function PlayersPageContent() {
       .update({ is_active: !p.is_active })
       .eq('id', p.id);
     if (error) {
-      alert(`Errore: ${error.message}`);
+      showError(`Errore: ${error.message}`);
       return;
     }
     fetchPlayers();
@@ -202,6 +254,41 @@ function PlayersPageContent() {
             : 'Elenco dei membri della squadra.'}
         </p>
       </div>
+
+      {isCoach && (
+        <div className="bg-white rounded-xl shadow border overflow-hidden">
+          <button onClick={toggleStats}
+            className="w-full text-left px-4 py-3 text-sm font-semibold text-slate-700 active:bg-slate-50">
+            {showStats ? '▾' : '▸'} 📊 Statistiche partite
+          </button>
+          {showStats && (
+            <div className="divide-y border-t">
+              {statsLoading ? (
+                <div className="p-4 text-center text-sm text-slate-500">Caricamento…</div>
+              ) : players.length === 0 ? (
+                <div className="p-4 text-center text-sm text-slate-500">Nessun dato.</div>
+              ) : (
+                players.map((p) => {
+                  const s = matchStats[p.id] || { matches: 0, starter: 0, sub: 0 };
+                  return (
+                    <div key={p.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                      <span className="font-medium text-slate-800 truncate">
+                        {p.jersey_number != null && <span className="text-slate-400 mr-1">#{p.jersey_number}</span>}
+                        {p.first_name} {p.last_name}
+                      </span>
+                      <div className="flex items-center gap-3 text-xs text-slate-600 shrink-0">
+                        <span><b className="text-slate-900">{s.matches}</b> partite</span>
+                        <span><b className="text-blue-700">{s.starter}</b> titolare</span>
+                        <span><b className="text-purple-700">{s.sub}</b> cambio</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {editingId && (
         <form onSubmit={handleSubmit} className="bg-white p-5 rounded-xl shadow space-y-4">
@@ -231,80 +318,101 @@ function PlayersPageContent() {
             </div>
           </div>
 
-          <h3 className="text-sm font-semibold text-slate-700 border-b pt-2 pb-1">Anagrafica & contatti</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Codice fiscale</label>
-              <input type="text" maxLength={16} value={codiceFiscale} onChange={(e) => setCodiceFiscale(e.target.value.toUpperCase())} className="w-full p-2.5 border rounded-lg text-slate-900 uppercase" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Sesso</label>
-              <select value={sesso} onChange={(e) => setSesso(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900 bg-white">
-                <option value="M">Maschio (M)</option>
-                <option value="F">Femmina (F)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Data di nascita</label>
-              <input type="date" value={dataNascita} onChange={(e) => setDataNascita(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Luogo di nascita</label>
-              <input type="text" value={luogoNascita} onChange={(e) => setLuogoNascita(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Prov. nascita</label>
-              <input type="text" maxLength={2} value={provNascita} onChange={(e) => setProvNascita(e.target.value.toUpperCase())} className="w-full p-2.5 border rounded-lg text-slate-900 uppercase" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Cellulare</label>
-              <input type="tel" value={cellulare} onChange={(e) => setCellulare(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
-            </div>
-          </div>
-
-          <h3 className="text-sm font-semibold text-slate-700 border-b pt-2 pb-1">Residenza</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Indirizzo</label>
-              <input type="text" value={indirizzoResidenza} onChange={(e) => setIndirizzoResidenza(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Città</label>
-              <input type="text" value={cittaResidenza} onChange={(e) => setCittaResidenza(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">CAP / Prov</label>
-              <div className="flex gap-2">
-                <input type="text" placeholder="CAP" maxLength={5} value={cap} onChange={(e) => setCap(e.target.value)} className="w-2/3 p-2.5 border rounded-lg text-slate-900" />
-                <input type="text" placeholder="PR" maxLength={2} value={provResidenza} onChange={(e) => setProvResidenza(e.target.value.toUpperCase())} className="w-1/3 p-2.5 border rounded-lg text-slate-900 uppercase" />
+          <div className="border rounded-lg overflow-hidden">
+            <button type="button" onClick={() => setAnagraficaOpen((v) => !v)}
+              className="w-full text-left px-3 py-2.5 bg-slate-50 text-sm font-semibold text-slate-700 active:bg-slate-100">
+              {anagraficaOpen ? '▾' : '▸'} Anagrafica & contatti
+            </button>
+            {anagraficaOpen && (
+              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Codice fiscale</label>
+                  <input type="text" maxLength={16} value={codiceFiscale} onChange={(e) => setCodiceFiscale(e.target.value.toUpperCase())} className="w-full p-2.5 border rounded-lg text-slate-900 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Sesso</label>
+                  <select value={sesso} onChange={(e) => setSesso(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900 bg-white">
+                    <option value="M">Maschio (M)</option>
+                    <option value="F">Femmina (F)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Data di nascita</label>
+                  <input type="date" value={dataNascita} onChange={(e) => setDataNascita(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Luogo di nascita</label>
+                  <input type="text" value={luogoNascita} onChange={(e) => setLuogoNascita(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Prov. nascita</label>
+                  <input type="text" maxLength={2} value={provNascita} onChange={(e) => setProvNascita(e.target.value.toUpperCase())} className="w-full p-2.5 border rounded-lg text-slate-900 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Cellulare</label>
+                  <input type="tel" value={cellulare} onChange={(e) => setCellulare(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          <h3 className="text-sm font-semibold text-slate-700 border-b pt-2 pb-1">Certificati & scadenze</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Scadenza visita medica</label>
-              <input type="date" value={scadenzaVisitaMedica} onChange={(e) => setScadenzaVisitaMedica(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
-            </div>
-            <div className="p-3 bg-slate-50 border rounded-lg">
-              <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700 mb-2 py-1 cursor-pointer">
-                <input type="checkbox" checked={addettoDae} onChange={(e) => setAddettoDae(e.target.checked)} className="w-5 h-5 accent-blue-600" />
-                <span>Addetto DAE</span>
-              </label>
-              {addettoDae && (
-                <input type="date" value={scadenzaDae} onChange={(e) => setScadenzaDae(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900 text-base" />
-              )}
-            </div>
-            <div className="p-3 bg-slate-50 border rounded-lg">
-              <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700 mb-2 py-1 cursor-pointer">
-                <input type="checkbox" checked={addettoAntincendio} onChange={(e) => setAddettoAntincendio(e.target.checked)} className="w-5 h-5 accent-blue-600" />
-                <span>Addetto antincendio</span>
-              </label>
-              {addettoAntincendio && (
-                <input type="date" value={scadenzaAntincendio} onChange={(e) => setScadenzaAntincendio(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900 text-base" />
-              )}
-            </div>
+          <div className="border rounded-lg overflow-hidden">
+            <button type="button" onClick={() => setResidenzaOpen((v) => !v)}
+              className="w-full text-left px-3 py-2.5 bg-slate-50 text-sm font-semibold text-slate-700 active:bg-slate-100">
+              {residenzaOpen ? '▾' : '▸'} Residenza
+            </button>
+            {residenzaOpen && (
+              <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Indirizzo</label>
+                  <input type="text" value={indirizzoResidenza} onChange={(e) => setIndirizzoResidenza(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Città</label>
+                  <input type="text" value={cittaResidenza} onChange={(e) => setCittaResidenza(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">CAP / Prov</label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="CAP" maxLength={5} value={cap} onChange={(e) => setCap(e.target.value)} className="w-2/3 p-2.5 border rounded-lg text-slate-900" />
+                    <input type="text" placeholder="PR" maxLength={2} value={provResidenza} onChange={(e) => setProvResidenza(e.target.value.toUpperCase())} className="w-1/3 p-2.5 border rounded-lg text-slate-900 uppercase" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border rounded-lg overflow-hidden">
+            <button type="button" onClick={() => setCertificatiOpen((v) => !v)}
+              className="w-full text-left px-3 py-2.5 bg-slate-50 text-sm font-semibold text-slate-700 active:bg-slate-100">
+              {certificatiOpen ? '▾' : '▸'} Certificati & scadenze
+            </button>
+            {certificatiOpen && (
+              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Scadenza visita medica</label>
+                  <input type="date" value={scadenzaVisitaMedica} onChange={(e) => setScadenzaVisitaMedica(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900" />
+                </div>
+                <div className="p-3 bg-slate-50 border rounded-lg">
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700 mb-2 py-1 cursor-pointer">
+                    <input type="checkbox" checked={addettoDae} onChange={(e) => setAddettoDae(e.target.checked)} className="w-5 h-5 accent-blue-600" />
+                    <span>Addetto DAE</span>
+                  </label>
+                  {addettoDae && (
+                    <input type="date" value={scadenzaDae} onChange={(e) => setScadenzaDae(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900 text-base" />
+                  )}
+                </div>
+                <div className="p-3 bg-slate-50 border rounded-lg">
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700 mb-2 py-1 cursor-pointer">
+                    <input type="checkbox" checked={addettoAntincendio} onChange={(e) => setAddettoAntincendio(e.target.checked)} className="w-5 h-5 accent-blue-600" />
+                    <span>Addetto antincendio</span>
+                  </label>
+                  {addettoAntincendio && (
+                    <input type="date" value={scadenzaAntincendio} onChange={(e) => setScadenzaAntincendio(e.target.value)} className="w-full p-2.5 border rounded-lg text-slate-900 text-base" />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-3 pt-2">

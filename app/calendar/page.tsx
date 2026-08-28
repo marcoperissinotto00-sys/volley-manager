@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/lib/toast-context';
 import RequireAuth from '@/components/RequireAuth';
 
 type EventType = 'training' | 'match' | 'event';
@@ -86,6 +87,7 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lon: numb
 
 function CalendarPageContent() {
   const { user, isCoach } = useAuth();
+  const { showError } = useToast();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [attendances, setAttendances] = useState<Record<string, AttendanceRow[]>>({});
   const [matchResults, setMatchResults] = useState<Record<string, { sets_won: number | null; sets_lost: number | null }>>({});
@@ -233,11 +235,11 @@ function CalendarPageContent() {
     e.preventDefault();
     if (!dateTime) return;
     if (eventType === 'match' && !opponentName) {
-      alert('Inserisci il nome dell\'avversario per le partite.');
+      showError('Inserisci il nome dell\'avversario per le partite.');
       return;
     }
     if (eventType === 'event' && !trainingTitle) {
-      alert('Inserisci un titolo per l\'evento.');
+      showError('Inserisci un titolo per l\'evento.');
       return;
     }
     setSubmitting(true);
@@ -265,15 +267,18 @@ function CalendarPageContent() {
 
     const { error } = await supabase.from('events').insert([payload]);
     setSubmitting(false);
-    if (error) { alert(`Errore: ${error.message}`); return; }
+    if (error) { showError(`Impossibile salvare l'evento: ${error.message}`); return; }
     resetForm();
     fetchAll(currentPage, filterTab);
   }
 
-  async function deleteEvent(id: string) {
-    if (!confirm('Eliminare questo appuntamento?')) return;
-    const { error } = await supabase.from('events').delete().eq('id', id);
-    if (error) { alert(`Errore: ${error.message}`); return; }
+  async function deleteEvent(ev: EventRow) {
+    const warning = ev.event_type === 'match'
+      ? 'Eliminare questa partita? Formazioni e risultato salvati andranno persi definitivamente.'
+      : 'Eliminare questo appuntamento?';
+    if (!confirm(warning)) return;
+    const { error } = await supabase.from('events').delete().eq('id', ev.id);
+    if (error) { showError(`Impossibile eliminare: ${error.message}`); return; }
     if (events.length === 1 && currentPage > 1) {
       setCurrentPage((p) => p - 1);
     } else {
@@ -284,21 +289,21 @@ function CalendarPageContent() {
   async function setRsvp(eventId: string, status: AttendanceStatus) {
     if (!user) return;
     const current = attendances[eventId]?.find((a) => a.user_id === user.id);
-    if (current && current.status === status) {
-      await supabase.from('attendances').delete().eq('id', current.id);
-    } else {
-      await supabase.from('attendances').upsert(
-        { event_id: eventId, user_id: user.id, status },
-        { onConflict: 'event_id,user_id' }
-      );
-    }
+    const { error } = current && current.status === status
+      ? await supabase.from('attendances').delete().eq('id', current.id)
+      : await supabase.from('attendances').upsert(
+          { event_id: eventId, user_id: user.id, status },
+          { onConflict: 'event_id,user_id' }
+        );
+    if (error) showError(`Impossibile salvare la risposta: ${error.message}`);
     fetchAll(currentPage, filterTab, showHistory);
   }
 
   async function toggleCheckin(attendance: AttendanceRow) {
-    await supabase.from('attendances')
+    const { error } = await supabase.from('attendances')
       .update({ checked_in: !attendance.checked_in })
       .eq('id', attendance.id);
+    if (error) showError(`Impossibile aggiornare la presenza: ${error.message}`);
     fetchAll(currentPage, filterTab, showHistory);
   }
 
@@ -517,7 +522,7 @@ function CalendarPageContent() {
                         </div>
                       )}
                       {isCoach && (
-                        <button onClick={() => deleteEvent(ev.id)} className="text-xs text-slate-400 active:text-red-700 px-2 py-1.5 -mr-2">Elimina</button>
+                        <button onClick={() => deleteEvent(ev)} className="text-xs text-slate-400 active:text-red-700 px-2 py-1.5 -mr-2">Elimina</button>
                       )}
                     </div>
                   </div>
