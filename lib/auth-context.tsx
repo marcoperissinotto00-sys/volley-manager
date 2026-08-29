@@ -15,6 +15,7 @@ export interface Profile {
   court_role: string | null;
   jersey_number: number | null;
   is_active: boolean;
+  avatar_url: string | null;
 }
 
 interface AuthContextValue {

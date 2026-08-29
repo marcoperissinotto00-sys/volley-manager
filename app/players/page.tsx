@@ -24,6 +24,7 @@ interface PlayerRow {
   court_role: string | null;
   jersey_number: number | null;
   is_active: boolean;
+  avatar_url: string | null;
   codice_fiscale?: string | null;
   sesso?: string | null;
   data_nascita?: string | null;
@@ -433,9 +434,14 @@ function PlayersPageContent() {
           {players.map((p) => (
             <li key={p.id} className={`p-4 bg-white shadow rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border ${!p.is_active ? 'opacity-50' : ''}`}>
               <div className="flex items-center space-x-4">
-                <span className="w-10 h-10 flex items-center justify-center bg-slate-100 font-bold text-lg text-slate-700 rounded-full shrink-0">
-                  {p.jersey_number ? `#${p.jersey_number}` : '-'}
-                </span>
+                {p.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0 border" />
+                ) : (
+                  <span className="w-10 h-10 flex items-center justify-center bg-slate-100 font-bold text-lg text-slate-700 rounded-full shrink-0">
+                    {p.jersey_number ? `#${p.jersey_number}` : '-'}
+                  </span>
+                )}
                 <div>
                   <div className="font-semibold text-lg text-slate-900">
                     {p.first_name} {p.last_name}
@@ -448,7 +454,9 @@ function PlayersPageContent() {
                       <span className="ml-2 px-2 py-0.5 bg-slate-200 text-slate-600 rounded-full text-xs font-bold align-middle">Inattivo</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-500">{p.email}</div>
+                  <div className="text-xs text-slate-500">
+                    {p.avatar_url && p.jersey_number ? `#${p.jersey_number} · ` : ''}{p.email}
+                  </div>
                 </div>
               </div>
 

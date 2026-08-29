@@ -19,8 +19,9 @@ app/
   calendar/page.tsx   — Calendario eventi con RSVP, appello, storico, crea/modifica/elimina evento
   players/page.tsx    — Rosa squadra (users + athlete_details) + statistiche partite
   match/[id]/page.tsx — Gestione partita: formazioni per set (titolare/cambio/libero) + risultato
+  profile/page.tsx    — "Il mio profilo": ogni utente modifica i propri dati anagrafici e la foto (ruolo/maglia restano gestiti dal coach)
 components/
-  NavBar.tsx          — Header con identità/logout + bottom tab bar (Calendario/Rosa)
+  NavBar.tsx          — Header con identità/logout (link a /profile) + bottom tab bar (Calendario/Rosa)
   RequireAuth.tsx     — Protezione pagine (coachOnly per /match)
 lib/
   supabase.ts         — Client Supabase (chiavi da .env.local)
@@ -39,6 +40,7 @@ lib/
 - `court_role` enum: `palleggiatore | schiacciatore | opposto | centrale | libero`
 - `jersey_number` int4
 - `is_active` bool
+- `avatar_url` text — foto profilo (Supabase Storage, bucket `avatars`, pubblico in lettura)
 - `created_at` timestamptz
 
 **`athlete_details`** — dati anagrafici sensibili (1:1 con users)
@@ -95,6 +97,8 @@ lib/
 ### RLS
 Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evitare ricorsione infinita (bug noto se si usa una subquery diretta su `users` dentro una policy su `users`).
 
+Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (policy `auth.uid() = id` / `auth.uid() = user_id`, per la pagina `/profile`). Il trigger `protect_coach_managed_fields` su `users` impedisce a chi non è coach/admin di modificare `user_role`, `court_role`, `jersey_number`, `is_active`, `email` anche aggirando la UI (li riporta al valore precedente lato DB). Bucket Storage `avatars`: lettura pubblica, scrittura solo nella propria cartella `{user_id}/...`.
+
 ## Funzionalità implementate
 
 ### Autenticazione
@@ -137,6 +141,13 @@ Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evi
 - **"📊 Statistiche partite"** (solo coach, sezione collassabile): per ogni giocatore, partite giocate (match distinti), volte titolare, volte cambio — aggregato client-side da `match_set_stats`
 - Form modifica: ruolo squadra, ruolo in campo, numero maglia sempre visibili; anagrafica, residenza, certificati sono sezioni collassabili (aperte di default solo se il giocatore ha già dati in quella sezione)
 - Nuovi giocatori si aggiungono registrandosi da `/register`
+- Avatar: se `avatar_url` è presente viene mostrato al posto del cerchio con `#numero maglia` (il numero, se presente, si sposta accanto all'email)
+
+### Il mio profilo (`/profile`)
+- Ogni utente (giocatore incluso) modifica qui i propri dati: nome/cognome, foto, anagrafica, residenza, certificati — stesse sezioni collassabili di `/players`, ma senza ruolo squadra/ruolo in campo/numero maglia (badge in sola lettura, gestiti solo dal coach da `/players`)
+- Foto profilo: upload su Storage bucket `avatars/{user_id}/avatar.<ext>` (`upsert: true`, sovrascrive sempre lo stesso file), poi `users.avatar_url` viene aggiornato con l'URL pubblico + `?t=timestamp` per invalidare la cache immagine
+- Accesso dalla NavBar: tap sul proprio nome/avatar nell'header
+- Vedi anche RLS/trigger `protect_coach_managed_fields` sopra: l'auto-modifica non può toccare ruolo/maglia/stato/email
 
 ## Convenzioni di sviluppo
 - Ogni componente pagina ha una funzione interna `*Content()` avvolta da `<RequireAuth>`
@@ -157,14 +168,12 @@ Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evi
 
 ## Funzionalità da implementare (backlog)
 - [x] Vista calendario a griglia mensile (punto 7) — sola visualizzazione, per individuare sovrapposizioni
-- [ ] Import CSV atleti (punto 3) — file `at2.csv` da caricare
-- [ ] Caricamento allenamenti in bulk (punto 4)
 - [ ] Notifiche push o email quando viene creato un evento
 - [ ] Deploy su Vercel
 - [ ] SMTP reale per email di conferma registrazione (ora disabilitata per test)
 - [x] Statistiche giocatori: partite giocate, volte titolare, volte cambio (Rosa squadra → "📊 Statistiche partite", solo coach)
 - [ ] Statistiche giocatori: presenze e set giocati (manca ancora)
-- [ ] Pagina profilo personale per ogni giocatore
+- [x] Pagina profilo personale per ogni giocatore (`/profile` — dati anagrafici e foto; ruolo/maglia restano al coach)
 
 ## Note importanti
 - Il file `.env.local` contiene le chiavi Supabase e NON va committato (già in .gitignore)

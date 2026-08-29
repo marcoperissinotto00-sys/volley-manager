@@ -26,8 +26,13 @@ export default function NavBar() {
       {/* Barra superiore: identità utente */}
       <header className="bg-white border-b sticky top-0 z-30">
         <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xl shrink-0">🏐</span>
+          <Link href="/profile" className="flex items-center gap-2 min-w-0 active:opacity-70 transition-opacity">
+            {profile?.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border" />
+            ) : (
+              <span className="text-xl shrink-0">🏐</span>
+            )}
             <span className="text-sm font-semibold text-slate-900 truncate">
               {profile ? `${profile.first_name} ${profile.last_name}` : user.email}
             </span>
@@ -36,7 +41,7 @@ export default function NavBar() {
                 Allenatore
               </span>
             )}
-          </div>
+          </Link>
           <button
             onClick={handleSignOut}
             className="shrink-0 px-3 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm font-medium transition-all"
