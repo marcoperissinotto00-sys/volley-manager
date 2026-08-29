@@ -5,17 +5,19 @@
 - **Frontend**: Next.js 16 (App Router) + React 19 + TypeScript
 - **Styling**: Tailwind CSS 4
 - **Backend/DB**: Supabase (Auth + PostgreSQL + RLS)
-- **Deploy**: Vercel (non ancora configurato)
+- **Deploy**: Vercel, deploy automatico ad ogni push su `main`
 
 ## Struttura cartelle rilevante
 ```
 app/
   layout.tsx          — Root layout con AuthProvider, ToastProvider e NavBar
   manifest.ts          — Manifest PWA (installabile su home screen)
-  icon.png / apple-icon.png — Icone app (placeholder, in attesa di versione definitiva)
+  icon.png / apple-icon.png — Icone app: mascotte "Dindiats Volley" (tacchino con pallone), ritagliata da un'immagine fornita dall'utente
   page.tsx            — Redirect a /calendar
-  login/page.tsx      — Login via Supabase Auth
-  register/page.tsx   — Registrazione (ruolo default: player)
+  login/page.tsx      — Login via Supabase Auth (email/password + Google)
+  register/page.tsx   — Registrazione (ruolo default: player), anche via Google
+  forgot-password/page.tsx — Richiesta link di recupero password
+  reset-password/page.tsx  — Imposta nuova password (dopo il link ricevuto via email)
   calendar/page.tsx   — Calendario eventi con RSVP, appello, storico, crea/modifica/elimina evento
   players/page.tsx    — Rosa squadra (users + athlete_details) + statistiche partite
   match/[id]/page.tsx — Gestione partita: formazioni per set (titolare/cambio/libero) + risultato
@@ -102,10 +104,12 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 ## Funzionalità implementate
 
 ### Autenticazione
-- Login/registrazione via Supabase Auth (email + password)
+- Login/registrazione via Supabase Auth: email + password, oppure Google (`supabase.auth.signInWithOAuth({ provider: 'google' })`, stesso bottone su `/login` e `/register` — per un account Google è la stessa identica chiamata sia per il primo accesso che per quelli successivi)
+- **Recupero password**: `/forgot-password` (invia il link via `resetPasswordForEmail`) → `/reset-password` (imposta la nuova password dopo il click sul link). Richiede SMTP reale configurato su Supabase, altrimenti l'email non parte
 - Ogni nuovo utente ha ruolo `player` di default
 - Per promuovere a `coach`: Table Editor Supabase → tabella `users` → cambia `user_role`
 - Chi ha ruolo `coach` o `admin` è considerato `isCoach` nell'app
+- Nota: un utente creato via Google potrebbe avere nome/cognome vuoti nella riga `users` se il trigger `handle_new_user` legge solo `raw_user_meta_data->>'first_name'/'last_name'` (popolati solo dalla registrazione via form) — in tal caso può sistemarli lui stesso da `/profile`
 
 ### Calendario (`/calendar`)
 - Toggle "📋 Lista" / "🗓️ Calendario": vista lista (default) o griglia mensile sola-visualizzazione (nessuna creazione/modifica dalla griglia), per individuare colpo d'occhio eventi nello stesso giorno; ogni cella mostra pallini colorati per tipo evento e un bordo rosso se ci sono 2+ eventi quel giorno; tap su un giorno apre sotto la griglia il dettaglio (orario, tipo, titolo, luogo) di tutti gli eventi di quel giorno, ordinati per ora
@@ -170,8 +174,9 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 ## Funzionalità da implementare (backlog)
 - [x] Vista calendario a griglia mensile (punto 7) — sola visualizzazione, per individuare sovrapposizioni
 - [ ] Notifiche push o email quando viene creato un evento
-- [ ] Deploy su Vercel
-- [ ] SMTP reale per email di conferma registrazione (ora disabilitata per test)
+- [x] Deploy su Vercel — automatico ad ogni push su `main`
+- [x] Recupero password (`/forgot-password` → `/reset-password`) e login con Google — **richiede configurazione manuale su Supabase/Google Cloud, vedi sotto**
+- [ ] SMTP reale per email di conferma registrazione (ora disabilitata per test) — stesso SMTP serve anche per il recupero password
 - [x] Statistiche giocatori: partite giocate, volte titolare, volte cambio (Rosa squadra → "📊 Statistiche partite", solo coach)
 - [ ] Statistiche giocatori: presenze e set giocati (manca ancora)
 - [x] Pagina profilo personale per ogni giocatore (`/profile` — dati anagrafici e foto; ruolo/maglia restano al coach)
@@ -181,3 +186,4 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 - La conferma email è disabilitata su Supabase (Authentication → Sign In → Email) per facilitare i test
 - Due utenti hanno ruolo `coach` (coach-giocatori: fanno entrambe le cose, nessun cambio profilo necessario)
 - La tabella `atleti` è stata eliminata (era duplicato di `users`); i dati anagrafici ora sono in `athlete_details`
+- Nome definitivo della squadra/app: **Dindiats Volley** (manifest PWA, titolo pagina, header login/registrazione)

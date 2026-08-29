@@ -16,12 +16,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Squadra Pallavolo",
+  title: "Dindiats Volley",
   description: "Gestione appuntamenti, presenze e rosa della squadra",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Pallavolo",
+    title: "Dindiats",
   },
 };
 

@@ -31,7 +31,8 @@ export default function NavBar() {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border" />
             ) : (
-              <span className="text-xl shrink-0">🏐</span>
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src="/icon.png" alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border" />
             )}
             <span className="text-sm font-semibold text-slate-900 truncate">
               {profile ? `${profile.first_name} ${profile.last_name}` : user.email}
