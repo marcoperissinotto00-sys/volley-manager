@@ -14,6 +14,18 @@ const COURT_ROLE_LABELS: Record<string, string> = {
   libero: 'Libero',
 };
 
+// Giorni mancanti alla scadenza (negativo se già scaduta)
+function daysUntil(dateStr: string) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr); target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+function formatDateIt(dateStr: string) {
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 function ProfileContent() {
@@ -182,6 +194,18 @@ function ProfileContent() {
         <h1 className="text-2xl font-bold text-slate-900">Il mio profilo</h1>
         <p className="text-sm text-slate-500 mt-1">I tuoi dati personali. Ruolo, maglia e stato sono gestiti dall&apos;allenatore.</p>
       </div>
+
+      {scadenzaVisitaMedica && daysUntil(scadenzaVisitaMedica) <= 15 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+          ⚠️ La tua visita medica{' '}
+          {daysUntil(scadenzaVisitaMedica) < 0
+            ? `è scaduta il ${formatDateIt(scadenzaVisitaMedica)}.`
+            : daysUntil(scadenzaVisitaMedica) === 0
+              ? 'scade oggi.'
+              : `scade tra ${daysUntil(scadenzaVisitaMedica)} giorn${daysUntil(scadenzaVisitaMedica) === 1 ? 'o' : 'i'} (${formatDateIt(scadenzaVisitaMedica)}).`}
+          {' '}Ricordati di rinnovarla.
+        </div>
+      )}
 
       {/* Foto profilo */}
       <div className="bg-white p-5 rounded-xl shadow flex items-center gap-4">

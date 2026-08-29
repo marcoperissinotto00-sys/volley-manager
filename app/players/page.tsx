@@ -21,6 +21,25 @@ function isDateValid(dateStr?: string | null) {
   return !!dateStr && dateStr >= TODAY_STR;
 }
 
+// Giorni mancanti alla scadenza (negativo se già scaduta)
+function daysUntil(dateStr: string) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr); target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+function formatDateIt(dateStr: string) {
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function medicalStatusLabel(dateStr: string) {
+  const days = daysUntil(dateStr);
+  if (days < 0) return `scaduta il ${formatDateIt(dateStr)}`;
+  if (days === 0) return 'scade oggi';
+  return `scade tra ${days} giorn${days === 1 ? 'o' : 'i'} (${formatDateIt(dateStr)})`;
+}
+
 interface PlayerRow {
   id: string;
   first_name: string;
@@ -86,17 +105,25 @@ function PlayersPageContent() {
 
   async function fetchPlayers() {
     setLoading(true);
-    const [{ data: usersData, error: usersError }, { data: detailsData, error: detailsError }] = await Promise.all([
+    const [
+      { data: usersData, error: usersError },
+      { data: detailsData, error: detailsError },
+      { data: medicalData, error: medicalError },
+    ] = await Promise.all([
       supabase.from('users').select('*').order('jersey_number', { ascending: true, nullsFirst: false }),
+      // Dati anagrafici completi: leggibili solo dal coach o dall'interessato (RLS)
       supabase.from('athlete_details').select('*'),
+      // Solo stato visita medica/DAE: leggibile da chiunque sia loggato, serve per il badge "per tutti"
+      supabase.from('athlete_medical_status').select('*'),
     ]);
 
-    if (usersError || detailsError) {
-      showError(`Impossibile caricare la rosa: ${(usersError ?? detailsError)?.message}`);
+    if (usersError || detailsError || medicalError) {
+      showError(`Impossibile caricare la rosa: ${(usersError ?? detailsError ?? medicalError)?.message}`);
     }
     if (!usersError && usersData) {
       const detailsMap = new Map((detailsData || []).map((d) => [d.user_id, d]));
-      const merged = usersData.map((u) => ({ ...u, ...(detailsMap.get(u.id) || {}) }));
+      const medicalMap = new Map((medicalData || []).map((d) => [d.user_id, d]));
+      const merged = usersData.map((u) => ({ ...u, ...(detailsMap.get(u.id) || {}), ...(medicalMap.get(u.id) || {}) }));
       setPlayers(merged as PlayerRow[]);
     }
     setLoading(false);
@@ -251,6 +278,10 @@ function PlayersPageContent() {
 
   if (loading) return <div className="p-6 text-center text-slate-500">Caricamento…</div>;
 
+  const expiringMedical = isCoach
+    ? players.filter((p) => p.scadenza_visita_medica && daysUntil(p.scadenza_visita_medica) <= 15)
+    : [];
+
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-5">
       <div>
@@ -261,6 +292,19 @@ function PlayersPageContent() {
             : 'Elenco dei membri della squadra.'}
         </p>
       </div>
+
+      {expiringMedical.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="text-sm font-bold text-red-700 mb-2">⚠️ Visite mediche in scadenza</div>
+          <ul className="space-y-1 text-sm text-red-700">
+            {expiringMedical.map((p) => (
+              <li key={p.id}>
+                {p.first_name} {p.last_name} — {medicalStatusLabel(p.scadenza_visita_medica!)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {isCoach && (
         <div className="bg-white rounded-xl shadow border overflow-hidden">
@@ -440,14 +484,22 @@ function PlayersPageContent() {
           {players.map((p) => (
             <li key={p.id} className={`p-4 bg-white shadow rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border ${!p.is_active ? 'opacity-50' : ''}`}>
               <div className="flex items-center space-x-4">
-                {p.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0 border" />
-                ) : (
-                  <span className="w-10 h-10 flex items-center justify-center bg-slate-100 font-bold text-lg text-slate-700 rounded-full shrink-0">
-                    {p.jersey_number ? `#${p.jersey_number}` : '-'}
-                  </span>
-                )}
+                <span className="relative shrink-0">
+                  {p.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border" />
+                  ) : (
+                    <span className="w-10 h-10 flex items-center justify-center bg-slate-100 font-bold text-lg text-slate-700 rounded-full">
+                      {p.jersey_number ? `#${p.jersey_number}` : '-'}
+                    </span>
+                  )}
+                  {p.scadenza_visita_medica && daysUntil(p.scadenza_visita_medica) <= 15 && (
+                    <span
+                      title="Visita medica in scadenza"
+                      className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white"
+                    />
+                  )}
+                </span>
                 <div>
                   <div className="font-semibold text-lg text-slate-900">
                     {p.first_name} {p.last_name}
@@ -488,7 +540,7 @@ function PlayersPageContent() {
                       Modifica
                     </button>
                     <button onClick={() => toggleActive(p)} className="px-3 py-2 bg-slate-50 text-slate-600 border border-slate-200 text-sm font-medium rounded-lg active:scale-95 transition-all">
-                      {p.is_active ? 'Disattiva' : 'Riattiva'}
+                      {p.is_active ? 'Disattiva' : 'Attiva'}
                     </button>
                   </>
                 )}

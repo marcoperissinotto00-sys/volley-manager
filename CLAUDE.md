@@ -94,7 +94,10 @@ lib/
 
 ### Funzioni e trigger
 - `public.is_coach_or_admin()` — SECURITY DEFINER, usata nelle RLS policy per evitare ricorsione
-- `public.handle_new_user()` — trigger su auth.users INSERT: crea automaticamente la riga in public.users con ruolo 'player'
+- `public.handle_new_user()` — trigger su auth.users INSERT: crea automaticamente la riga in public.users con ruolo 'player', `is_active = false` (in attesa di approvazione, vedi Autenticazione), nome/cognome da `raw_user_meta_data` (form o Google)
+
+### Viste
+- `public.athlete_medical_status` — vista su `athlete_details` che espone solo `user_id, scadenza_visita_medica, addetto_dae, scadenza_dae`, leggibile da qualunque utente loggato (`grant select ... to authenticated`). Serve perché `athlete_details` è leggibile via RLS solo da coach/interessato: senza questa vista un giocatore normale non potrebbe vedere lo stato visita/DAE dei compagni nel badge "per tutti" di `/players` (bug scoperto e corretto in sessione: il badge sembrava dire "mancante" per chiunque non fosse il coach o l'interessato)
 
 ### RLS
 Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evitare ricorsione infinita (bug noto se si usa una subquery diretta su `users` dentro una policy su `users`).
@@ -105,7 +108,7 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 
 ### Autenticazione
 - Login/registrazione via Supabase Auth: email + password, oppure Google (`supabase.auth.signInWithOAuth({ provider: 'google' })`, stesso bottone su `/login` e `/register` — per un account Google è la stessa identica chiamata sia per il primo accesso che per quelli successivi)
-- **Recupero password**: `/forgot-password` (invia il link via `resetPasswordForEmail`) → `/reset-password` (imposta la nuova password dopo il click sul link). Richiede SMTP reale configurato su Supabase, altrimenti l'email non parte
+- **Recupero password**: `/forgot-password` (invia il link via `resetPasswordForEmail`) → `/reset-password` (imposta la nuova password dopo il click sul link). SMTP configurato (Resend, dominio sandbox `resend.dev`) — **funziona solo verso l'email del coach**: in sandbox Resend consegna solo all'indirizzo del proprio account, non ad altri giocatori, finché non si verifica un dominio proprio o si passa a Gmail SMTP. Nel frattempo, se un giocatore perde la password va reimpostata a mano dal coach (Supabase → Authentication → Users)
 - Ogni nuovo utente ha ruolo `player` di default
 - Per promuovere a `coach`: Table Editor Supabase → tabella `users` → cambia `user_role`
 - Chi ha ruolo `coach` o `admin` è considerato `isCoach` nell'app
@@ -147,12 +150,15 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 - Nuovi giocatori si aggiungono registrandosi da `/register`
 - Avatar: se `avatar_url` è presente viene mostrato al posto del cerchio con `#numero maglia` (il numero, se presente, si sposta accanto all'email)
 - Badge visita medica/DAE (visibili a tutti, non solo al coach): non mostrano la scadenza ma solo lo stato — "✓/✕ Visita medica" in base a `scadenza_visita_medica >= oggi`; "✓ DAE" (verde) o "⚠ DAE scaduto" (ambra) solo se `addetto_dae` è vero
+- Alert coach "⚠️ Visite mediche in scadenza" in cima alla pagina: elenca chi ha la visita medica scaduta o in scadenza entro 15 giorni (con data), solo se `isCoach`
+- Pallino rosso sull'avatar (in Rosa e nell'header della NavBar, per l'utente loggato) se la visita medica scade entro 15 giorni — stesso calcolo del badge/alert, solo un indicatore visivo aggiuntivo
 
 ### Il mio profilo (`/profile`)
 - Ogni utente (giocatore incluso) modifica qui i propri dati: nome/cognome, foto, anagrafica, residenza, certificati — stesse sezioni collassabili di `/players`, ma senza ruolo squadra/ruolo in campo/numero maglia (badge in sola lettura, gestiti solo dal coach da `/players`)
 - Foto profilo: upload su Storage bucket `avatars/{user_id}/avatar.<ext>` (`upsert: true`, sovrascrive sempre lo stesso file), poi `users.avatar_url` viene aggiornato con l'URL pubblico + `?t=timestamp` per invalidare la cache immagine
 - Accesso dalla NavBar: tap sul proprio nome/avatar nell'header
 - Vedi anche RLS/trigger `protect_coach_managed_fields` sopra: l'auto-modifica non può toccare ruolo/maglia/stato/email
+- Alert personale in cima alla pagina se la propria `scadenza_visita_medica` è scaduta o scade entro 15 giorni (visibile solo al proprietario del profilo; per il coach l'equivalente aggregato su tutta la squadra è in `/players`)
 
 ## Convenzioni di sviluppo
 - Ogni componente pagina ha una funzione interna `*Content()` avvolta da `<RequireAuth>`
@@ -176,14 +182,14 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 - [ ] Notifiche push o email quando viene creato un evento
 - [x] Deploy su Vercel — automatico ad ogni push su `main`
 - [x] Recupero password (`/forgot-password` → `/reset-password`) e login con Google — **richiede configurazione manuale su Supabase/Google Cloud, vedi sotto**
-- [ ] SMTP reale per email di conferma registrazione (ora disabilitata per test) — stesso SMTP serve anche per il recupero password
+- [x] ~~SMTP reale per email di conferma registrazione~~ — scelta deliberatamente di non riattivarla: l'attivazione manuale via `is_active` (vedi sotto) è già un controllo più forte, la conferma email sarebbe ridondante. Resta comunque da sistemare un dominio verificato per far funzionare il recupero password verso tutti i giocatori, non solo il coach (vedi nota SMTP/Resend sopra)
 - [x] Statistiche giocatori: partite giocate, volte titolare, volte cambio (Rosa squadra → "📊 Statistiche partite", solo coach)
 - [ ] Statistiche giocatori: presenze e set giocati (manca ancora)
 - [x] Pagina profilo personale per ogni giocatore (`/profile` — dati anagrafici e foto; ruolo/maglia restano al coach)
 
 ## Note importanti
 - Il file `.env.local` contiene le chiavi Supabase e NON va committato (già in .gitignore)
-- La conferma email è disabilitata su Supabase (Authentication → Sign In → Email) per facilitare i test
+- La conferma email è disabilitata su Supabase (Authentication → Sign In → Email) **per scelta definitiva**, non solo per i test: la sostituisce l'attivazione manuale via `is_active` (vedi Autenticazione)
 - Due utenti hanno ruolo `coach` (coach-giocatori: fanno entrambe le cose, nessun cambio profilo necessario)
 - La tabella `atleti` è stata eliminata (era duplicato di `users`); i dati anagrafici ora sono in `athlete_details`
 - Nome definitivo della squadra/app: **Dindiats Volley** (manifest PWA, titolo pagina, header login/registrazione)

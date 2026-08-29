@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/lib/supabase';
 
 const TABS = [
   { href: '/calendar', label: 'Calendario', icon: '📅' },
@@ -13,6 +15,20 @@ export default function NavBar() {
   const { user, profile, isCoach, signOut } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const [medicalExpiring, setMedicalExpiring] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('athlete_medical_status').select('scadenza_visita_medica').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => {
+        if (!data?.scadenza_visita_medica) { setMedicalExpiring(false); return; }
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const target = new Date(data.scadenza_visita_medica); target.setHours(0, 0, 0, 0);
+        const days = Math.round((target.getTime() - today.getTime()) / 86400000);
+        setMedicalExpiring(days <= 15);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   if (!user) return null;
 
@@ -27,13 +43,21 @@ export default function NavBar() {
       <header className="bg-white border-b sticky top-0 z-30">
         <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
           <Link href="/profile" className="flex items-center gap-2 min-w-0 active:opacity-70 transition-opacity">
-            {profile?.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border" />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src="/icon.png" alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border" />
-            )}
+            <span className="relative shrink-0">
+              {profile?.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover border" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src="/icon.png" alt="" className="w-7 h-7 rounded-full object-cover border" />
+              )}
+              {medicalExpiring && (
+                <span
+                  title="Visita medica in scadenza"
+                  className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"
+                />
+              )}
+            </span>
             <span className="text-sm font-semibold text-slate-900 truncate">
               {profile ? `${profile.first_name} ${profile.last_name}` : user.email}
             </span>
