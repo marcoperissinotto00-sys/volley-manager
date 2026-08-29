@@ -142,6 +142,7 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 - Form modifica: ruolo squadra, ruolo in campo, numero maglia sempre visibili; anagrafica, residenza, certificati sono sezioni collassabili (aperte di default solo se il giocatore ha già dati in quella sezione)
 - Nuovi giocatori si aggiungono registrandosi da `/register`
 - Avatar: se `avatar_url` è presente viene mostrato al posto del cerchio con `#numero maglia` (il numero, se presente, si sposta accanto all'email)
+- Badge visita medica/DAE (visibili a tutti, non solo al coach): non mostrano la scadenza ma solo lo stato — "✓/✕ Visita medica" in base a `scadenza_visita_medica >= oggi`; "✓ DAE" (verde) o "⚠ DAE scaduto" (ambra) solo se `addetto_dae` è vero
 
 ### Il mio profilo (`/profile`)
 - Ogni utente (giocatore incluso) modifica qui i propri dati: nome/cognome, foto, anagrafica, residenza, certificati — stesse sezioni collassabili di `/players`, ma senza ruolo squadra/ruolo in campo/numero maglia (badge in sola lettura, gestiti solo dal coach da `/players`)

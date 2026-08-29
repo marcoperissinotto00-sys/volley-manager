@@ -15,6 +15,12 @@ const COURT_ROLE_LABELS: Record<string, string> = {
   libero: 'Libero',
 };
 
+// Confronto solo sulla data (YYYY-MM-DD), non serve l'orario
+const TODAY_STR = new Date().toISOString().slice(0, 10);
+function isDateValid(dateStr?: string | null) {
+  return !!dateStr && dateStr >= TODAY_STR;
+}
+
 interface PlayerRow {
   id: string;
   first_name: string;
@@ -456,6 +462,16 @@ function PlayersPageContent() {
                   </div>
                   <div className="text-xs text-slate-500">
                     {p.avatar_url && p.jersey_number ? `#${p.jersey_number} · ` : ''}{p.email}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isDateValid(p.scadenza_visita_medica) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {isDateValid(p.scadenza_visita_medica) ? '✓ Visita medica' : '✕ Visita medica'}
+                    </span>
+                    {p.addetto_dae && (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${!p.scadenza_dae || isDateValid(p.scadenza_dae) ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {!p.scadenza_dae || isDateValid(p.scadenza_dae) ? '✓ DAE' : '⚠ DAE scaduto'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
