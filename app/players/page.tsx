@@ -276,6 +276,32 @@ function PlayersPageContent() {
     fetchPlayers();
   }
 
+  async function deletePlayer(p: PlayerRow) {
+    if (!confirm(
+      `Eliminare definitivamente ${p.first_name} ${p.last_name}?\n\n` +
+      `Vengono cancellati dati anagrafici, presenze e statistiche partite. ` +
+      `L'account di accesso resta valido: se in futuro rientra, riapparirà come nuovo iscritto in attesa di approvazione.`
+    )) return;
+
+    const deletes = await Promise.all([
+      supabase.from('match_set_stats').delete().eq('user_id', p.id),
+      supabase.from('attendances').delete().eq('user_id', p.id),
+      supabase.from('athlete_details').delete().eq('user_id', p.id),
+    ]);
+    const relatedError = deletes.find((d) => d.error)?.error;
+    if (relatedError) {
+      showError(`Impossibile eliminare: ${relatedError.message}`);
+      return;
+    }
+
+    const { error } = await supabase.from('users').delete().eq('id', p.id);
+    if (error) {
+      showError(`Impossibile eliminare: ${error.message}`);
+      return;
+    }
+    fetchPlayers();
+  }
+
   if (loading) return <div className="p-6 text-center text-slate-500">Caricamento…</div>;
 
   const expiringMedical = isCoach
@@ -541,6 +567,9 @@ function PlayersPageContent() {
                     </button>
                     <button onClick={() => toggleActive(p)} className="px-3 py-2 bg-slate-50 text-slate-600 border border-slate-200 text-sm font-medium rounded-lg active:scale-95 transition-all">
                       {p.is_active ? 'Disattiva' : 'Attiva'}
+                    </button>
+                    <button onClick={() => deletePlayer(p)} className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 text-sm font-medium rounded-lg active:scale-95 transition-all">
+                      Elimina
                     </button>
                   </>
                 )}

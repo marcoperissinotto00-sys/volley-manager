@@ -46,10 +46,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .from('users')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
       setProfile(data as Profile);
+      return;
+    }
+
+    if (!error && !data) {
+      // Account autenticato ma senza riga in "users" (es. un atleta eliminato che
+      // torna ad accedere): ricrea il profilo come una nuova iscrizione in attesa
+      // di approvazione, così non resta bloccato senza via di recupero.
+      const { data: authData } = await supabase.auth.getUser();
+      const authUser = authData.user;
+      if (!authUser) return;
+      const meta = authUser.user_metadata || {};
+      const { data: created } = await supabase
+        .from('users')
+        .insert({
+          id: userId,
+          first_name: meta.first_name || meta.given_name || '',
+          last_name: meta.last_name || meta.family_name || '',
+          email: authUser.email || '',
+          user_role: 'player',
+          is_active: false,
+        })
+        .select()
+        .single();
+      if (created) setProfile(created as Profile);
     }
   }
 

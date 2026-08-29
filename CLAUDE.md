@@ -144,7 +144,8 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 
 ### Rosa squadra (`/players`)
 - Lista tutti i giocatori (attivi e non, questi ultimi con opacità ridotta), da `users`
-- Solo coach/admin vedono i pulsanti Modifica e Disattiva
+- Solo coach/admin vedono i pulsanti Modifica, Disattiva/Attiva ed Elimina
+- **Elimina** (solo coach, con conferma): cancella riga `users` + `athlete_details`/`attendances`/`match_set_stats` collegati. Non tocca l'account Supabase Auth (nessun privilegio admin lato client): se la persona accede di nuovo in futuro, `loadProfile()` in `lib/auth-context.tsx` non trova più il profilo e ne ricrea uno pulito (ruolo `player`, `is_active=false`) come se fosse una nuova iscrizione — richiede la policy `users_insert_own_row` (self-insert con valori vincolati a player/non attivo, per evitare che un utente si auto-assegni ruolo/attivazione)
 - **"📊 Statistiche partite"** (solo coach, sezione collassabile): per ogni giocatore, partite giocate (match distinti), volte titolare, volte cambio — aggregato client-side da `match_set_stats`
 - Form modifica: ruolo squadra, ruolo in campo, numero maglia sempre visibili; anagrafica, residenza, certificati sono sezioni collassabili (aperte di default solo se il giocatore ha già dati in quella sezione)
 - Nuovi giocatori si aggiungono registrandosi da `/register`
