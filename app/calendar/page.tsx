@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, FormEvent, useRef } from 'react';
+import { useEffect, useState, useMemo, FormEvent, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -66,6 +66,30 @@ function isToday(iso: string) {
   return d.toDateString() === now.toDateString();
 }
 
+function dayKey(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatSelectedDayLabel(key: string) {
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function buildMonthGrid(monthDate: Date): (Date | null)[] {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7; // Lunedì = 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 function eventTitle(ev: EventRow): string {
   if (ev.event_type === 'match' && ev.opponent_name) {
     return `vs ${ev.opponent_name}`;
@@ -118,6 +142,17 @@ function CalendarPageContent() {
   const [openAppello, setOpenAppello] = useState<Record<string, boolean>>({});
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [showHistory, setShowHistory] = useState(false);
+
+  // Vista a griglia mensile (sola visualizzazione, per individuare sovrapposizioni)
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [gridMonth, setGridMonth] = useState(() => {
+    const d = new Date();
+    d.setDate(1); d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const [gridEvents, setGridEvents] = useState<EventRow[]>([]);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // Paginazione
   const [currentPage, setCurrentPage] = useState(1);
@@ -224,6 +259,50 @@ function CalendarPageContent() {
     fetchAll(currentPage, filterTab, showHistory);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
+
+  async function fetchGridEvents(monthDate: Date, tab: FilterTab) {
+    setGridLoading(true);
+    const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
+    let query = supabase
+      .from('events')
+      .select('*')
+      .gte('date_time', start.toISOString())
+      .lt('date_time', end.toISOString())
+      .order('date_time', { ascending: true });
+    if (tab === 'training') query = query.eq('event_type', 'training');
+    if (tab === 'match') query = query.eq('event_type', 'match');
+    const { data, error } = await query;
+    if (error) {
+      showError(`Impossibile caricare il calendario: ${error.message}`);
+      setGridEvents([]);
+    } else {
+      setGridEvents((data as EventRow[]) || []);
+    }
+    setGridLoading(false);
+  }
+
+  useEffect(() => {
+    if (viewMode === 'grid') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchGridEvents(gridMonth, filterTab);
+      setSelectedDay(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, gridMonth, filterTab]);
+
+  const eventsByDay = useMemo(() => {
+    const map: Record<string, EventRow[]> = {};
+    gridEvents.forEach((ev) => {
+      const key = dayKey(new Date(ev.date_time));
+      if (!map[key]) map[key] = [];
+      map[key].push(ev);
+    });
+    return map;
+  }, [gridEvents]);
+
+  const monthGridCells = useMemo(() => buildMonthGrid(gridMonth), [gridMonth]);
+  const monthLabel = gridMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 
   function handleLocationChange(value: string) {
     setLocation(value);
@@ -386,23 +465,35 @@ function CalendarPageContent() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Calendario</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {showHistory ? 'Storico eventi passati' : 'Prossimi 30 giorni'}
+          <p className="text-xs text-slate-500 mt-0.5 capitalize">
+            {viewMode === 'grid' ? monthLabel : showHistory ? 'Storico eventi passati' : 'Prossimi 30 giorni'}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button
-            onClick={() => { setShowHistory((v) => !v); setShowForm(false); setCurrentPage(1); }}
-            className={`px-3 py-2.5 font-semibold rounded-xl text-sm transition-all active:scale-95 border ${showHistory ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>
-            {showHistory ? '← Prossimi' : '🕐 Storico'}
-          </button>
-          {isCoach && !showHistory && (
+          {viewMode === 'list' && (
+            <button
+              onClick={() => { setShowHistory((v) => !v); setShowForm(false); setCurrentPage(1); }}
+              className={`px-3 py-2.5 font-semibold rounded-xl text-sm transition-all active:scale-95 border ${showHistory ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>
+              {showHistory ? '← Prossimi' : '🕐 Storico'}
+            </button>
+          )}
+          {isCoach && viewMode === 'list' && !showHistory && (
             <button onClick={() => (showForm ? resetForm() : setShowForm(true))}
               className="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition-all text-sm">
               {showForm ? '✕' : '+ Nuovo'}
             </button>
           )}
         </div>
+      </div>
+
+      {/* Toggle Lista / Calendario */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+        {([['list', '📋 Lista'], ['grid', '🗓️ Calendario']] as ['list' | 'grid', string][]).map(([val, label]) => (
+          <button key={val} onClick={() => setViewMode(val)}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${viewMode === val ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Tab filtri */}
@@ -415,6 +506,95 @@ function CalendarPageContent() {
         ))}
       </div>
 
+      {viewMode === 'grid' ? (
+        <>
+          {/* Griglia mensile — sola visualizzazione, per individuare sovrapposizioni */}
+          <div className="bg-white rounded-2xl shadow-sm border p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <button onClick={() => { setGridMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)); }}
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">‹</button>
+              <div className="text-base font-bold text-slate-900 capitalize">{monthLabel}</div>
+              <button onClick={() => { setGridMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)); }}
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">›</button>
+            </div>
+
+            {gridLoading ? (
+              <div className="py-10 text-center text-slate-400 text-sm">Caricamento…</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400 uppercase">
+                  {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map((d) => <div key={d}>{d}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {monthGridCells.map((d, i) => {
+                    if (!d) return <div key={i} className="aspect-square" />;
+                    const key = dayKey(d);
+                    const dayEvents = eventsByDay[key] || [];
+                    const overlap = dayEvents.length >= 2;
+                    const today = d.toDateString() === new Date().toDateString();
+                    const selected = selectedDay === key;
+                    return (
+                      <button key={i}
+                        onClick={() => dayEvents.length > 0 && setSelectedDay(selected ? null : key)}
+                        disabled={dayEvents.length === 0}
+                        className={`aspect-square rounded-lg flex flex-col items-center justify-start pt-1 gap-0.5 text-xs transition-all
+                          ${selected ? 'bg-blue-600 text-white' : today ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700'}
+                          ${overlap && !selected ? 'ring-2 ring-red-400' : ''}
+                          ${dayEvents.length > 0 ? 'active:scale-95' : ''}`}>
+                        <span>{d.getDate()}</span>
+                        <div className="flex gap-0.5">
+                          {dayEvents.slice(0, 3).map((ev) => (
+                            <span key={ev.id} className={`w-1.5 h-1.5 rounded-full ${selected ? 'bg-white' :
+                              ev.event_type === 'match' ? 'bg-amber-500' : ev.event_type === 'training' ? 'bg-slate-400' : 'bg-blue-500'}`} />
+                          ))}
+                        </div>
+                        {dayEvents.length > 3 && <span className="text-[8px] leading-none">+{dayEvents.length - 3}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1 flex-wrap">
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-400" />Allenamento</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Partita</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Evento</span>
+                  <span className="flex items-center gap-1 ml-auto"><span className="w-2.5 h-2.5 rounded ring-2 ring-red-400" />Più eventi</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Dettaglio giorno selezionato */}
+          {selectedDay && (
+            <div className="bg-white rounded-2xl shadow-sm border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-900 text-sm capitalize">{formatSelectedDayLabel(selectedDay)}</h3>
+                <button onClick={() => setSelectedDay(null)} className="text-slate-400 text-sm px-2 active:scale-95">✕</button>
+              </div>
+              {(eventsByDay[selectedDay] || []).length >= 2 && (
+                <div className="text-xs bg-red-50 text-red-700 border border-red-200 rounded-lg px-3 py-2">
+                  ⚠️ Più appuntamenti lo stesso giorno: controlla che gli orari non si sovrappongano.
+                </div>
+              )}
+              <div className="space-y-2">
+                {(eventsByDay[selectedDay] || []).map((ev) => {
+                  const { timeStr } = formatDateTime(ev.date_time);
+                  return (
+                    <div key={ev.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                      <div className="text-sm font-bold text-slate-900 tabular-nums w-12 shrink-0">{timeStr}</div>
+                      <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full shrink-0 ${ev.event_type === 'match' ? 'bg-amber-100 text-amber-800' : ev.event_type === 'training' ? 'bg-slate-100 text-slate-600' : 'bg-blue-100 text-blue-700'}`}>
+                        {EVENT_TYPE_LABELS[ev.event_type]}
+                      </span>
+                      <div className="flex-1 min-w-0 text-sm text-slate-700 truncate">{eventTitle(ev)}</div>
+                      {ev.location && <div className="text-xs text-slate-400 truncate max-w-[30%]">📍 {ev.location}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+      <>
       {/* Form nuovo evento */}
       {showForm && isCoach && (
         <form onSubmit={handleSubmitEvent} className="bg-white p-5 rounded-xl shadow space-y-4">
@@ -693,6 +873,8 @@ function CalendarPageContent() {
             </div>
           )}
         </>
+      )}
+      </>
       )}
     </div>
   );
