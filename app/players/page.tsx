@@ -312,14 +312,23 @@ function PlayersPageContent() {
     ? players.filter((p) => p.scadenza_visita_medica && daysUntil(p.scadenza_visita_medica) <= 15)
     : [];
 
+  const activeCount = players.filter((p) => p.is_active).length;
+  const pendingCount = players.length - activeCount;
+
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Rosa squadra</h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-slate-900">Rosa squadra</h1>
+          <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-bold rounded-full shrink-0">
+            {activeCount} iscritt{activeCount === 1 ? 'o' : 'i'}
+          </span>
+        </div>
         <p className="text-sm text-slate-500 mt-1">
           {isCoach
             ? 'Ogni giocatore compare qui dopo essersi registrato. Modifica ruolo, maglia e dati anagrafici da qui.'
             : 'Elenco dei membri della squadra.'}
+          {isCoach && pendingCount > 0 && ` · ${pendingCount} in attesa di approvazione`}
         </p>
       </div>
 
