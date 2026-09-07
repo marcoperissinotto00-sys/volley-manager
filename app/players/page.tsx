@@ -369,7 +369,15 @@ function PlayersPageContent() {
 
       {editingId && (
         <form onSubmit={handleSubmit} className="bg-white p-5 rounded-xl shadow space-y-4">
-          <h2 className="font-semibold text-slate-800">Modifica scheda giocatore</h2>
+          <h2 className="font-semibold text-slate-800">
+            Modifica scheda giocatore
+            {(() => {
+              const editingPlayer = players.find((p) => p.id === editingId);
+              return editingPlayer ? (
+                <span className="font-normal text-slate-500"> — {editingPlayer.first_name} {editingPlayer.last_name}</span>
+              ) : null;
+            })()}
+          </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
