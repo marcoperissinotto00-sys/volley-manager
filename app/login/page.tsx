@@ -123,6 +123,10 @@ export default function LoginPage() {
             Registrati
           </Link>
         </p>
+
+        <p className="text-center text-xs text-slate-400 mt-6">
+          <Link href="/privacy" className="hover:underline">Informativa sulla privacy</Link>
+        </p>
       </div>
     </div>
   );

@@ -171,6 +171,10 @@ export default function RegisterPage() {
         <p className="text-center text-xs text-slate-400 mt-3">
           Ti registri come giocatore. Il tuo allenatore potrà promuoverti se necessario.
         </p>
+
+        <p className="text-center text-xs text-slate-400 mt-3">
+          <Link href="/privacy" className="hover:underline">Informativa sulla privacy</Link>
+        </p>
       </div>
     </div>
   );
