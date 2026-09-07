@@ -110,7 +110,7 @@ function PlayersPageContent() {
       { data: detailsData, error: detailsError },
       { data: medicalData, error: medicalError },
     ] = await Promise.all([
-      supabase.from('users').select('*').order('jersey_number', { ascending: true, nullsFirst: false }),
+      supabase.from('users').select('*'),
       // Dati anagrafici completi: leggibili solo dal coach o dall'interessato (RLS)
       supabase.from('athlete_details').select('*'),
       // Solo stato visita medica/DAE: leggibile da chiunque sia loggato, serve per il badge "per tutti"
@@ -124,6 +124,10 @@ function PlayersPageContent() {
       const detailsMap = new Map((detailsData || []).map((d) => [d.user_id, d]));
       const medicalMap = new Map((medicalData || []).map((d) => [d.user_id, d]));
       const merged = usersData.map((u) => ({ ...u, ...(detailsMap.get(u.id) || {}), ...(medicalMap.get(u.id) || {}) }));
+      merged.sort((a, b) => {
+        if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+        return `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, 'it', { sensitivity: 'base' });
+      });
       setPlayers(merged as PlayerRow[]);
     }
     setLoading(false);
