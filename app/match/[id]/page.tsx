@@ -77,7 +77,7 @@ function MatchPageContent() {
     ] = await Promise.all([
       supabase.from('events').select('id, title, date_time, location, opponent_name, is_home_game, maps_url').eq('id', eventId).single(),
       supabase.from('matches').select('*').eq('event_id', eventId).maybeSingle(),
-      supabase.from('users').select('id, first_name, last_name, jersey_number, court_role').eq('is_active', true).order('jersey_number', { ascending: true, nullsFirst: false }),
+      supabase.from('users').select('id, first_name, last_name, jersey_number, court_role').eq('is_active', true).order('last_name', { ascending: true }).order('first_name', { ascending: true }),
       supabase.from('attendances').select('user_id').eq('event_id', eventId).eq('checked_in', true),
     ]);
 
