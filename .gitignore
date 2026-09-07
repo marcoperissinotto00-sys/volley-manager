@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# documenti/appunti locali, non da versionare
+/doc
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
