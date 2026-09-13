@@ -33,6 +33,12 @@ function formatDateIt(dateStr: string) {
   return `${d}/${m}/${y}`;
 }
 
+function formatMonthLabel(monthKey: string) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString('it-IT', { month: 'short', year: '2-digit' });
+}
+
 function medicalStatusLabel(dateStr: string) {
   const days = daysUntil(dateStr);
   if (days < 0) return `scaduta il ${formatDateIt(dateStr)}`;
@@ -79,6 +85,11 @@ function PlayersPageContent() {
   const [showStats, setShowStats] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
   const [matchStats, setMatchStats] = useState<Record<string, { matches: number; starter: number; sub: number }>>({});
+
+  const [showAttendanceStats, setShowAttendanceStats] = useState(false);
+  const [attendanceStatsLoading, setAttendanceStatsLoading] = useState(false);
+  const [attendanceMonths, setAttendanceMonths] = useState<string[]>([]);
+  const [attendanceStats, setAttendanceStats] = useState<Record<string, Record<string, number>>>({});
 
   const [anagraficaOpen, setAnagraficaOpen] = useState(false);
   const [residenzaOpen, setResidenzaOpen] = useState(false);
@@ -168,6 +179,62 @@ function PlayersPageContent() {
     const next = !showStats;
     setShowStats(next);
     if (next && Object.keys(matchStats).length === 0) fetchMatchStats();
+  }
+
+  async function fetchAttendanceStats() {
+    setAttendanceStatsLoading(true);
+    const { data: trainingEvents, error: eventsError } = await supabase
+      .from('events')
+      .select('id, date_time')
+      .eq('event_type', 'training');
+
+    if (eventsError) {
+      showError(`Impossibile caricare le presenze: ${eventsError.message}`);
+      setAttendanceStatsLoading(false);
+      return;
+    }
+
+    const eventIds = (trainingEvents || []).map((e) => e.id);
+    if (eventIds.length === 0) {
+      setAttendanceStats({});
+      setAttendanceMonths([]);
+      setAttendanceStatsLoading(false);
+      return;
+    }
+    // Mese (YYYY-MM) dell'evento, per raggruppare le presenze
+    const eventMonthMap = new Map((trainingEvents || []).map((e) => [e.id, (e.date_time as string).slice(0, 7)]));
+
+    const { data: attData, error: attError } = await supabase
+      .from('attendances')
+      .select('user_id, event_id, checked_in')
+      .in('event_id', eventIds)
+      .eq('checked_in', true);
+
+    if (attError) {
+      showError(`Impossibile caricare le presenze: ${attError.message}`);
+      setAttendanceStatsLoading(false);
+      return;
+    }
+
+    const acc: Record<string, Record<string, number>> = {};
+    const monthsSet = new Set<string>();
+    (attData || []).forEach((row) => {
+      const month = eventMonthMap.get(row.event_id);
+      if (!month) return;
+      monthsSet.add(month);
+      if (!acc[month]) acc[month] = {};
+      acc[month][row.user_id] = (acc[month][row.user_id] || 0) + 1;
+    });
+
+    setAttendanceStats(acc);
+    setAttendanceMonths(Array.from(monthsSet).sort().reverse());
+    setAttendanceStatsLoading(false);
+  }
+
+  function toggleAttendanceStats() {
+    const next = !showAttendanceStats;
+    setShowAttendanceStats(next);
+    if (next && attendanceMonths.length === 0) fetchAttendanceStats();
   }
 
   function resetForm() {
@@ -374,6 +441,49 @@ function PlayersPageContent() {
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isCoach && (
+        <div className="bg-white rounded-xl shadow border overflow-hidden">
+          <button onClick={toggleAttendanceStats}
+            className="w-full text-left px-4 py-3 text-sm font-semibold text-slate-700 active:bg-slate-50">
+            {showAttendanceStats ? '▾' : '▸'} 📅 Presenze allenamenti per mese
+          </button>
+          {showAttendanceStats && (
+            <div className="border-t overflow-x-auto">
+              {attendanceStatsLoading ? (
+                <div className="p-4 text-center text-sm text-slate-500">Caricamento…</div>
+              ) : attendanceMonths.length === 0 ? (
+                <div className="p-4 text-center text-sm text-slate-500">Nessun dato.</div>
+              ) : (
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-500">
+                      <th className="text-left font-medium px-4 py-2 sticky left-0 bg-white">Giocatore</th>
+                      {attendanceMonths.map((m) => (
+                        <th key={m} className="text-center font-medium px-2 py-2 whitespace-nowrap">{formatMonthLabel(m)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {players.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-4 py-2 font-medium text-slate-800 truncate sticky left-0 bg-white">
+                          {p.first_name} {p.last_name}
+                        </td>
+                        {attendanceMonths.map((m) => (
+                          <td key={m} className="text-center px-2 py-2 tabular-nums text-slate-700">
+                            {attendanceStats[m]?.[p.id] ?? 0}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           )}
