@@ -47,6 +47,23 @@ interface AttendanceRow {
   users?: { first_name: string; last_name: string };
 }
 
+interface ActivePlayer {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
+// Candidato all'appello: una riga attendances reale, oppure un "virtuale" per chi non ha ancora risposto al sondaggio
+interface AppelloEntry {
+  id: string;
+  event_id: string;
+  user_id: string;
+  status: AttendanceStatus | null;
+  checked_in: boolean;
+  users: { first_name: string; last_name: string };
+  isVirtual: boolean;
+}
+
 function formatDateTime(iso: string) {
   const d = new Date(iso);
   const dateStr = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -132,6 +149,7 @@ function CalendarPageContent() {
   const { showError } = useToast();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [attendances, setAttendances] = useState<Record<string, AttendanceRow[]>>({});
+  const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>([]);
   const [matchResults, setMatchResults] = useState<Record<string, { sets_won: number | null; sets_lost: number | null }>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -253,6 +271,18 @@ function CalendarPageContent() {
     setCurrentPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterTab, showHistory]);
+
+  useEffect(() => {
+    if (!isCoach) return;
+    (async () => {
+      const { data } = await supabase
+        .from('users')
+        .select('id, first_name, last_name')
+        .eq('is_active', true)
+        .order('last_name');
+      setActivePlayers((data as ActivePlayer[]) || []);
+    })();
+  }, [isCoach]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -436,20 +466,45 @@ function CalendarPageContent() {
     }
   }
 
-  async function toggleCheckin(attendance: AttendanceRow) {
-    const nextValue = !attendance.checked_in;
+  async function toggleCheckin(entry: AppelloEntry) {
+    const nextValue = !entry.checked_in;
+
+    if (entry.isVirtual) {
+      // Chi non ha risposto al sondaggio non ha ancora una riga attendances: la creiamo qui,
+      // segnando la presenza fisica confermata dal coach (status 'present' di default).
+      setAttendances((prev) => ({
+        ...prev,
+        [entry.event_id]: [...(prev[entry.event_id] || []),
+          { id: `temp-${entry.event_id}-${entry.user_id}`, event_id: entry.event_id, user_id: entry.user_id, status: 'present', checked_in: nextValue, users: entry.users }],
+      }));
+      const { error } = await supabase.from('attendances').upsert(
+        { event_id: entry.event_id, user_id: entry.user_id, status: 'present', checked_in: nextValue },
+        { onConflict: 'event_id,user_id' }
+      );
+      if (error) {
+        showError(`Impossibile aggiornare la presenza: ${error.message}`);
+        setAttendances((prev) => ({
+          ...prev,
+          [entry.event_id]: (prev[entry.event_id] || []).filter((a) => a.user_id !== entry.user_id),
+        }));
+      } else {
+        fetchAll(currentPage, filterTab, showHistory);
+      }
+      return;
+    }
+
     setAttendances((prev) => ({
       ...prev,
-      [attendance.event_id]: (prev[attendance.event_id] || []).map((a) => (a.id === attendance.id ? { ...a, checked_in: nextValue } : a)),
+      [entry.event_id]: (prev[entry.event_id] || []).map((a) => (a.id === entry.id ? { ...a, checked_in: nextValue } : a)),
     }));
     const { error } = await supabase.from('attendances')
       .update({ checked_in: nextValue })
-      .eq('id', attendance.id);
+      .eq('id', entry.id);
     if (error) {
       showError(`Impossibile aggiornare la presenza: ${error.message}`);
       setAttendances((prev) => ({
         ...prev,
-        [attendance.event_id]: (prev[attendance.event_id] || []).map((a) => (a.id === attendance.id ? { ...a, checked_in: !nextValue } : a)),
+        [entry.event_id]: (prev[entry.event_id] || []).map((a) => (a.id === entry.id ? { ...a, checked_in: !nextValue } : a)),
       }));
     }
   }
@@ -710,6 +765,16 @@ function CalendarPageContent() {
               const mine = user ? list.find((a) => a.user_id === user.id) : undefined;
               const confirmedList = list.filter((a) => ['present', 'late', 'maybe'].includes(a.status));
               const checkedInCount = list.filter((a) => a.checked_in).length;
+              // Appello: candidati tutti i giocatori attivi, non solo chi ha risposto al sondaggio
+              const appelloList: AppelloEntry[] = activePlayers.map((p) => {
+                const att = list.find((a) => a.user_id === p.id);
+                return att
+                  ? { ...att, users: att.users || { first_name: p.first_name, last_name: p.last_name }, isVirtual: false }
+                  : {
+                      id: `virtual-${ev.id}-${p.id}`, event_id: ev.id, user_id: p.id, status: null, checked_in: false,
+                      users: { first_name: p.first_name, last_name: p.last_name }, isVirtual: true,
+                    };
+              });
               const open = !!openWho[ev.id];
               const appelloOpen = !!openAppello[ev.id];
               const today = isToday(ev.date_time);
@@ -822,17 +887,17 @@ function CalendarPageContent() {
                   )}
 
                   {/* Appello — solo coach */}
-                  {isCoach && confirmedList.length > 0 && (
+                  {isCoach && appelloList.length > 0 && (
                     <>
                       <button onClick={() => setOpenAppello((prev) => ({ ...prev, [ev.id]: !prev[ev.id] }))}
                         className="w-full text-left px-4 py-3 text-xs font-semibold text-green-700 border-t active:bg-green-50">
-                        {appelloOpen ? '▾' : '▸'} 📋 Appello ({checkedInCount}/{confirmedList.length})
+                        {appelloOpen ? '▾' : '▸'} 📋 Appello ({checkedInCount}/{appelloList.length})
                       </button>
                       {appelloOpen && (
                         <div className="px-4 pb-4 bg-green-50 pt-3 space-y-3">
                           <p className="text-xs text-slate-500">Spunta chi è fisicamente presente.</p>
-                          {confirmedList.map((a) => {
-                            const nome = a.users ? `${a.users.first_name} ${a.users.last_name}` : '—';
+                          {appelloList.map((a) => {
+                            const nome = `${a.users.first_name} ${a.users.last_name}`;
                             return (
                               <label key={a.id} className="flex items-center gap-3 cursor-pointer select-none py-1">
                                 <input type="checkbox" checked={a.checked_in} onChange={() => toggleCheckin(a)}
@@ -841,6 +906,8 @@ function CalendarPageContent() {
                                   {nome}
                                   {a.status === 'late' && <span className="ml-1 text-xs text-amber-600">(in ritardo)</span>}
                                   {a.status === 'maybe' && <span className="ml-1 text-xs text-violet-600">(forse)</span>}
+                                  {a.status === 'absent' && <span className="ml-1 text-xs text-red-600">(non ci sono)</span>}
+                                  {a.status === null && <span className="ml-1 text-xs text-slate-400">(non risposto)</span>}
                                 </span>
                               </label>
                             );
