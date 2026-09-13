@@ -113,6 +113,26 @@ function MatchPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  // Se l'appello viene aggiornato dal calendario mentre questa pagina è già aperta
+  // (o rimasta in cache di navigazione, es. tasto indietro), aggiorna i check-in al ritorno sulla tab
+  useEffect(() => {
+    if (!eventId) return;
+    async function refreshCheckIns() {
+      const { data, error } = await supabase
+        .from('attendances').select('user_id').eq('event_id', eventId).eq('checked_in', true);
+      if (!error) setCheckedInPlayers((data || []).map((a) => a.user_id));
+    }
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') refreshCheckIns();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', refreshCheckIns);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', refreshCheckIns);
+    };
+  }, [eventId]);
+
   // Crea o aggiorna il record match con avversario/sede dall'evento
   async function ensureMatch(): Promise<string | null> {
     if (match) return match.id;
