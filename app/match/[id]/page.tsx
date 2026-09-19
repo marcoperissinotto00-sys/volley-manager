@@ -34,6 +34,7 @@ interface SetStatRow {
   set_number: number;
   played_as_libero: boolean;
   is_starter: boolean;
+  role_played: string | null;
 }
 
 interface PlayerRow {
@@ -42,6 +43,20 @@ interface PlayerRow {
   last_name: string;
   jersey_number: number | null;
   court_role: string | null;
+}
+
+const COURT_ROLES = ['palleggiatore', 'schiacciatore', 'opposto', 'centrale', 'libero'];
+const COURT_ROLE_LABELS: Record<string, string> = {
+  palleggiatore: 'Palleggiatore',
+  schiacciatore: 'Schiacciatore',
+  opposto: 'Opposto',
+  centrale: 'Centrale',
+  libero: 'Libero',
+};
+
+interface AthleteDetailRow {
+  user_id: string;
+  data_nascita: string | null;
 }
 
 function MatchPageContent() {
@@ -53,6 +68,7 @@ function MatchPageContent() {
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [setStats, setSetStats] = useState<SetStatRow[]>([]);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [dobByUser, setDobByUser] = useState<Record<string, string | null>>({});
   const [checkedInPlayers, setCheckedInPlayers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSet, setActiveSet] = useState(1);
@@ -74,14 +90,16 @@ function MatchPageContent() {
       { data: matchData, error: matchError },
       { data: playersData, error: playersError },
       { data: attData, error: attError },
+      { data: dobData, error: dobError },
     ] = await Promise.all([
       supabase.from('events').select('id, title, date_time, location, opponent_name, is_home_game, maps_url').eq('id', eventId).single(),
       supabase.from('matches').select('*').eq('event_id', eventId).maybeSingle(),
       supabase.from('users').select('id, first_name, last_name, jersey_number, court_role').eq('is_active', true).order('last_name', { ascending: true }).order('first_name', { ascending: true }),
       supabase.from('attendances').select('user_id').eq('event_id', eventId).eq('checked_in', true),
+      supabase.from('athlete_details').select('user_id, data_nascita'),
     ]);
 
-    const loadError = evError || matchError || playersError || attError;
+    const loadError = evError || matchError || playersError || attError || dobError;
     if (loadError) showError(`Impossibile caricare i dati: ${loadError.message}`);
 
     if (evData) setEvent(evData as EventRow);
@@ -101,6 +119,7 @@ function MatchPageContent() {
     }
 
     setPlayers((playersData || []) as PlayerRow[]);
+    setDobByUser(Object.fromEntries(((dobData || []) as AthleteDetailRow[]).map((d) => [d.user_id, d.data_nascita])));
     setCheckedInPlayers((attData || []).map((a) => a.user_id));
     setLoading(false);
   }
@@ -191,18 +210,21 @@ function MatchPageContent() {
         setSetStats((prev) => [...prev, existing]);
       }
     } else {
+      // Ruolo di default nel set = ruolo base del giocatore, modificabile in seguito
+      const defaultRole = players.find((p) => p.id === playerId)?.court_role ?? null;
       const tempId = `temp-${playerId}-${setNumber}`;
       const optimisticRow: SetStatRow = {
         id: tempId, match_id: matchId, user_id: playerId, set_number: setNumber,
-        played_as_libero: false, is_starter: true,
+        played_as_libero: defaultRole === 'libero', is_starter: true, role_played: defaultRole,
       };
       setSetStats((prev) => [...prev, optimisticRow]);
       const { data, error } = await supabase.from('match_set_stats').insert([{
         match_id: matchId,
         user_id: playerId,
         set_number: setNumber,
-        played_as_libero: false,
+        played_as_libero: defaultRole === 'libero',
         is_starter: true,
+        role_played: defaultRole,
       }]).select().single();
       if (error) {
         showError(`Impossibile aggiornare la formazione: ${error.message}`);
@@ -213,16 +235,20 @@ function MatchPageContent() {
     }
   }
 
-  async function toggleLibero(playerId: string, setNumber: number) {
+  async function setRoleForPlayer(playerId: string, setNumber: number, role: string) {
     if (!match) return;
     const existing = setStats.find((s) => s.match_id === match.id && s.user_id === playerId && s.set_number === setNumber);
     if (!existing) return;
-    const nextValue = !existing.played_as_libero;
-    setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, played_as_libero: nextValue } : s)));
-    const { error } = await supabase.from('match_set_stats').update({ played_as_libero: nextValue }).eq('id', existing.id);
+    const nextRole = role || null;
+    const prevRole = existing.role_played;
+    const prevLibero = existing.played_as_libero;
+    setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, role_played: nextRole, played_as_libero: nextRole === 'libero' } : s)));
+    const { error } = await supabase.from('match_set_stats')
+      .update({ role_played: nextRole, played_as_libero: nextRole === 'libero' })
+      .eq('id', existing.id);
     if (error) {
-      showError(`Impossibile aggiornare il libero: ${error.message}`);
-      setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, played_as_libero: existing.played_as_libero } : s)));
+      showError(`Impossibile aggiornare il ruolo: ${error.message}`);
+      setSetStats((prev) => prev.map((s) => (s.id === existing.id ? { ...s, role_played: prevRole, played_as_libero: prevLibero } : s)));
     }
   }
 
@@ -251,6 +277,15 @@ function MatchPageContent() {
     return new Date(iso).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
+  function formatFullDate(iso: string) {
+    return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  function formatDob(iso: string | null | undefined) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
   if (loading) return <div className="p-6 text-center text-slate-500">Caricamento…</div>;
   if (!event) return <div className="p-6 text-center text-red-600">Evento non trovato.</div>;
 
@@ -259,7 +294,8 @@ function MatchPageContent() {
     : players;
 
   return (
-    <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-5">
+    <>
+    <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-5 print:hidden">
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-slate-500 -mx-2 -my-1">
@@ -285,6 +321,11 @@ function MatchPageContent() {
             </span>
           )}
         </div>
+
+        <button onClick={() => window.print()}
+          className="w-full py-2.5 rounded-lg font-semibold text-sm bg-white/10 border border-white/20 text-white active:scale-95 transition-all">
+          🖨️ Stampa foglio presenze
+        </button>
 
         {/* Luogo con link Maps */}
         {event.location && (
@@ -391,11 +432,13 @@ function MatchPageContent() {
                           className="w-5 h-5 accent-purple-500" />
                         <span className={`text-xs font-semibold ${!stat?.is_starter ? 'text-purple-700' : 'text-slate-400'}`}>Cambio</span>
                       </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer text-sm shrink-0">
-                        <input type="checkbox" checked={!!stat?.played_as_libero} onChange={() => toggleLibero(p.id, activeSet)}
-                          className="w-5 h-5 accent-amber-500" />
-                        <span className={`text-xs font-semibold ${stat?.played_as_libero ? 'text-amber-700' : 'text-slate-400'}`}>Libero</span>
-                      </label>
+                      <select value={stat?.role_played ?? ''} onChange={(e) => setRoleForPlayer(p.id, activeSet, e.target.value)}
+                        className={`text-xs font-semibold rounded-lg border px-2 py-1.5 shrink-0 ${stat?.role_played && stat.role_played !== p.court_role ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-600'}`}>
+                        <option value="">Ruolo —</option>
+                        {COURT_ROLES.map((r) => (
+                          <option key={r} value={r}>{COURT_ROLE_LABELS[r]}</option>
+                        ))}
+                      </select>
                     </div>
                   )}
                 </div>
@@ -406,6 +449,46 @@ function MatchPageContent() {
         <p className="text-xs text-slate-400 text-center">Le formazioni si salvano automaticamente set per set.</p>
       </div>
     </div>
+
+    {/* Foglio presenze — visibile solo in stampa */}
+    <div className="hidden print:block p-8">
+      <div className="flex items-center gap-3 mb-1">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/giv-tonic-logo.jpg" alt="" className="w-10 h-10 object-contain" />
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Campionato GIV Tonic 2026-2027</p>
+      </div>
+      <h1 className="text-xl font-bold">
+        {event.opponent_name ? `vs ${event.opponent_name}` : 'Partita'}
+        {event.is_home_game != null && (event.is_home_game ? ' — Casa' : ' — Trasferta')}
+      </h1>
+      <p className="text-sm mb-4">
+        {formatFullDate(event.date_time)}
+        {event.location ? ` · ${event.location}` : ''}
+      </p>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            <th className="border border-black text-left p-2">Cognome</th>
+            <th className="border border-black text-left p-2">Nome</th>
+            <th className="border border-black text-left p-2">Data di nascita</th>
+            <th className="border border-black text-left p-2">N.</th>
+            <th className="border border-black text-left p-2">Presente</th>
+          </tr>
+        </thead>
+        <tbody>
+          {players.map((p) => (
+            <tr key={p.id}>
+              <td className="border border-black p-2">{p.last_name}</td>
+              <td className="border border-black p-2">{p.first_name}</td>
+              <td className="border border-black p-2">{formatDob(dobByUser[p.id])}</td>
+              <td className="border border-black p-2">{p.jersey_number ?? ''}</td>
+              <td className="border border-black p-2"></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    </>
   );
 }
 

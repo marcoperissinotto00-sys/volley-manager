@@ -40,7 +40,7 @@ export default function NavBar() {
   return (
     <>
       {/* Barra superiore: identità utente */}
-      <header className="bg-white border-b sticky top-0 z-30">
+      <header className="bg-white border-b sticky top-0 z-30 print:hidden">
         <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
           <Link href="/profile" className="flex items-center gap-2 min-w-0 active:opacity-70 transition-opacity">
             <span className="relative shrink-0">
@@ -67,18 +67,29 @@ export default function NavBar() {
               </span>
             )}
           </Link>
-          <button
-            onClick={handleSignOut}
-            className="shrink-0 px-3 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm font-medium transition-all"
-          >
-            Esci
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <a
+              href="/documents/norme-partecipazione-giv-tonic-2026-2027.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Regolamento del campionato"
+              className="px-2.5 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm transition-all"
+            >
+              📋
+            </a>
+            <button
+              onClick={handleSignOut}
+              className="px-3 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm font-medium transition-all"
+            >
+              Esci
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Barra inferiore: navigazione principale, comoda da usare col pollice */}
       <nav
-        className="fixed bottom-0 inset-x-0 z-30 bg-white border-t"
+        className="fixed bottom-0 inset-x-0 z-30 bg-white border-t print:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="max-w-4xl mx-auto grid grid-cols-2 gap-2 p-2">
