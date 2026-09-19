@@ -417,13 +417,10 @@ function MatchPageContent() {
                   <label className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 cursor-pointer select-none active:bg-blue-100/50">
                     <input type="checkbox" checked={inField} onChange={() => togglePlayerInSet(p.id, activeSet)}
                       className="w-5 h-5 accent-blue-600 cursor-pointer shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <span className={`font-medium ${inField ? 'text-blue-900' : 'text-slate-700'}`}>
-                        {p.jersey_number != null && <span className="text-slate-400 mr-1">#{p.jersey_number}</span>}
-                        {p.first_name} {p.last_name}
-                      </span>
-                      {p.court_role && <span className="ml-2 text-xs text-slate-400">{p.court_role}</span>}
-                    </div>
+                    <span className={`font-medium min-w-0 truncate ${inField ? 'text-blue-900' : 'text-slate-700'}`}>
+                      {p.jersey_number != null && <span className="text-slate-400 mr-1">#{p.jersey_number}</span>}
+                      {p.first_name} {p.last_name}
+                    </span>
                   </label>
                   {inField && (
                     <div className="flex items-center gap-3 pr-4 py-3 shrink-0">
