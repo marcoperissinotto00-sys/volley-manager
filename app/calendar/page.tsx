@@ -193,7 +193,10 @@ function CalendarPageContent() {
   async function fetchAll(page = currentPage, tab = filterTab, history = showHistory) {
     setLoading(true);
     const now = new Date();
-    const todayIso = now.toISOString();
+    // Confine tra "prossimi" e "storico" = inizio della giornata odierna, non l'ora esatta:
+    // un evento di oggi già passato d'orario deve restare tra i prossimi, non sparire nello storico
+    const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+    const todayIso = startOfToday.toISOString();
     const in30DaysIso = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     const from = (page - 1) * PAGE_SIZE;

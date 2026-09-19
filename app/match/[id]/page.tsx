@@ -455,8 +455,9 @@ function MatchPageContent() {
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Campionato GIV Tonic 2026-2027</p>
       </div>
       <h1 className="text-xl font-bold">
-        {event.opponent_name ? `vs ${event.opponent_name}` : 'Partita'}
-        {event.is_home_game != null && (event.is_home_game ? ' — Casa' : ' — Trasferta')}
+        {event.is_home_game === false
+          ? `${event.opponent_name ?? 'Avversario'} vs Dindiats Volley`
+          : `Dindiats Volley${event.opponent_name ? ` vs ${event.opponent_name}` : ''}`}
       </h1>
       <p className="text-sm mb-4">
         {formatFullDate(event.date_time)}
