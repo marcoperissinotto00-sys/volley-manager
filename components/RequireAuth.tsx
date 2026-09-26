@@ -3,6 +3,8 @@
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/lib/toast-context';
+import { supabase } from '@/lib/supabase';
 
 /**
  * Avvolgi una pagina con <RequireAuth> per obbligare il login.
@@ -16,8 +18,9 @@ export default function RequireAuth({
   children: ReactNode;
   coachOnly?: boolean;
 }) {
-  const { user, profile, loading, isCoach, signOut } = useAuth();
+  const { user, profile, loading, isCoach, signOut, refreshProfile } = useAuth();
   const router = useRouter();
+  const { showError } = useToast();
 
   useEffect(() => {
     if (loading) return;
@@ -29,6 +32,35 @@ export default function RequireAuth({
       router.replace('/calendar');
     }
   }, [loading, user, isCoach, coachOnly, router]);
+
+  // Arrivo da "Registrati con Google" con un invito squadra in sospeso:
+  // l'OAuth fa uscire e rientrare dall'app, quindi il codice invito non
+  // sopravvive nello stato React di /register e viaggia invece nell'URL
+  // di ritorno (redirectTo=/calendar?claim_team=...). Va gestito qui,
+  // PRIMA del blocco "in attesa di approvazione" qui sotto: un neoregistrato
+  // ha sempre is_active=false, quindi il rendering dei children non
+  // arriverebbe mai a succedere per lui.
+  useEffect(() => {
+    if (!user) return;
+    const params = new URLSearchParams(window.location.search);
+    const claimTeamCode = params.get('claim_team');
+    if (!claimTeamCode) return;
+
+    async function claim() {
+      const { error } = await supabase.rpc('claim_team_by_invite_code', {
+        p_invite_code: claimTeamCode,
+      });
+      if (error) {
+        showError('Non è stato possibile associarti alla squadra dal link di invito. Contatta il tuo allenatore.');
+      }
+      params.delete('claim_team');
+      const newSearch = params.toString();
+      router.replace(window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+      await refreshProfile();
+    }
+    claim();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Il profilo si carica in modo asincrono subito dopo che "user" diventa disponibile
   // (es. appena dopo il login): finché non arriva mostriamo solo "Caricamento…", mai

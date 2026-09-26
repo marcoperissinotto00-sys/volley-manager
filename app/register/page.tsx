@@ -1,11 +1,20 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/lib/toast-context';
 
-export default function RegisterPage() {
+function RegisterForm() {
+  const searchParams = useSearchParams();
+  const teamCode = searchParams.get('team');
+  const { showError } = useToast();
+
+  const [teamName, setTeamName] = useState<string | null>(null);
+  const [resolvingTeam, setResolvingTeam] = useState(true);
+  const [invalidTeam, setInvalidTeam] = useState(false);
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -14,6 +23,33 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!teamCode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResolvingTeam(false);
+      setInvalidTeam(true);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .rpc('resolve_team_by_invite_code', { p_invite_code: teamCode })
+        .maybeSingle<{ id: string; name: string }>();
+      if (cancelled) return;
+      if (error || !data) {
+        setInvalidTeam(true);
+      } else {
+        setTeamName(data.name);
+      }
+      setResolvingTeam(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [teamCode]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -28,28 +64,65 @@ export default function RegisterPage() {
       },
     });
 
-    setSubmitting(false);
-
     if (error) {
+      setSubmitting(false);
       setError(error.message);
       return;
     }
 
     // Se la conferma email è attiva, non c'è ancora una sessione
     if (data.session) {
+      if (teamCode) {
+        const { error: claimError } = await supabase.rpc('claim_team_by_invite_code', {
+          p_invite_code: teamCode,
+        });
+        if (claimError) {
+          showError('Account creato ma non è stato possibile associarti alla squadra. Contatta il tuo allenatore.');
+        }
+      }
+      setSubmitting(false);
       router.replace('/calendar');
     } else {
+      setSubmitting(false);
       setNeedsConfirmation(true);
     }
   }
 
   async function handleGoogleSignup() {
     setError(null);
+    const redirectTo = teamCode
+      ? `${window.location.origin}/calendar?claim_team=${encodeURIComponent(teamCode)}`
+      : `${window.location.origin}/calendar`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/calendar` },
+      options: { redirectTo },
     });
     if (error) setError(error.message);
+  }
+
+  if (resolvingTeam) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center px-4">
+        <p className="text-slate-500">Verifica del link di invito…</p>
+      </div>
+    );
+  }
+
+  if (invalidTeam) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center px-4">
+        <div className="w-full max-w-sm bg-white p-8 rounded-xl shadow text-center">
+          <div className="text-4xl mb-3">🔗</div>
+          <h1 className="text-xl font-bold text-slate-900 mb-2">Link di invito mancante o non valido</h1>
+          <p className="text-sm text-slate-500">
+            Per iscriverti serve il link di invito della tua squadra. Chiedilo al tuo allenatore.
+          </p>
+          <Link href="/login" className="inline-block mt-5 text-blue-600 font-medium hover:underline">
+            Vai al login
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (needsConfirmation) {
@@ -78,6 +151,12 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-bold text-slate-900">Unisciti alla squadra</h1>
           <p className="text-sm text-slate-500 mt-1">Crea il tuo account giocatore</p>
         </div>
+
+        {teamName && (
+          <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2.5 mb-4 text-center">
+            Ti stai iscrivendo a: <span className="font-semibold">{teamName}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -177,5 +256,19 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[80vh] flex items-center justify-center px-4">
+          <p className="text-slate-500">Caricamento…</p>
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }
