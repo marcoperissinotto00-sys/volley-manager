@@ -183,10 +183,18 @@
 
   .note { margin-top: 2rem; font-size: 0.88rem; color: var(--ink-muted); padding-top: 1.25rem; border-top: 1px solid var(--border); }
   .note b { color: var(--ink); }
+
+  .back-link {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.85rem;
+    color: var(--accent); text-decoration: none; margin-bottom: 1.25rem;
+  }
+  .back-link:hover, .back-link:focus-visible { text-decoration: underline; }
 </style>
 </head>
 <body>
 <div class="page">
+  <a class="back-link" href="/calendar">← Torna all'app</a>
   <p class="eyebrow">Manuale rapido</p>
   <h1>Guida a Dindiats Volley</h1>
   <p class="lede">Come accedere e cosa puoi fare nell'app, per giocatori e per il coach.</p>
