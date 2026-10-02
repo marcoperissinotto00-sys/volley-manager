@@ -18,10 +18,11 @@ app/
   register/page.tsx   — Registrazione (ruolo default: player), anche via Google
   forgot-password/page.tsx — Richiesta link di recupero password
   reset-password/page.tsx  — Imposta nuova password (dopo il link ricevuto via email)
-  calendar/page.tsx   — Calendario eventi con RSVP, appello, storico, crea/modifica/elimina evento
+  calendar/page.tsx   — Calendario eventi con RSVP, appello, navigazione per mese, crea/modifica/elimina evento
   players/page.tsx    — Rosa squadra (users + athlete_details) + statistiche partite
   match/[id]/page.tsx — Gestione partita: formazioni per set (titolare/cambio/libero) + risultato
   profile/page.tsx    — "Il mio profilo": ogni utente modifica i propri dati anagrafici e la foto (ruolo/maglia restano gestiti dal coach)
+  admin/page.tsx      — Console super-admin (solo user_role='admin'): crea squadre, genera/rigenera link di invito, attiva il primo coach di una nuova squadra
 components/
   NavBar.tsx          — Header con identità/logout (link a /profile) + bottom tab bar (Calendario/Rosa)
   RequireAuth.tsx     — Protezione pagine (coachOnly per /match)
@@ -35,13 +36,21 @@ lib/
 
 ### Tabelle principali
 
+**`teams`** — squadre isolate (multi-tenant)
+- `id` uuid PK
+- `name` varchar
+- `invite_code` text UNIQUE — generato random (8 caratteri), usato nel link `/register?team=<invite_code>`
+- `is_active` bool
+- `created_at` timestamptz, `created_by` uuid FK → users.id
+
 **`users`** — profilo utente (collegato 1:1 a auth.users)
 - `id` uuid PK (= auth.users.id)
 - `first_name`, `last_name`, `email` varchar
-- `user_role` enum: `admin | coach | player`
+- `user_role` enum: `admin | coach | player` — `admin` è il super-admin globale (governa tutte le squadre dalla pagina `/admin`, vedi sotto); `is_coach_of_my_team()` tratta `admin` come coach anche della propria `team_id`, se ne ha una (vedi RLS)
 - `court_role` enum: `palleggiatore | schiacciatore | opposto | centrale | libero`
 - `jersey_number` int4
 - `is_active` bool
+- `team_id` uuid FK → teams.id (NULL finché non si registra tramite link di invito, o per un super-admin senza squadra propria)
 - `avatar_url` text — foto profilo (Supabase Storage, bucket `avatars`, pubblico in lettura)
 - `created_at` timestamptz
 
@@ -56,6 +65,7 @@ lib/
 
 **`events`** — calendario appuntamenti
 - `id` uuid PK
+- `team_id` uuid FK → teams.id NOT NULL — impostato in automatico da un trigger BEFORE INSERT dalla squadra di chi crea l'evento, non falsificabile lato client
 - `title` varchar (auto-generato per partite: "vs Avversario")
 - `event_type` enum: `training | match | event`
 - `date_time` timestamptz
@@ -93,25 +103,34 @@ lib/
 - `is_starter` bool default true — titolare (true) o cambio (false) in quel set
 
 ### Funzioni e trigger
-- `public.is_coach_or_admin()` — SECURITY DEFINER, usata nelle RLS policy per evitare ricorsione
-- `public.handle_new_user()` — trigger su auth.users INSERT: crea automaticamente la riga in public.users con ruolo 'player', `is_active = false` (in attesa di approvazione, vedi Autenticazione), nome/cognome da `raw_user_meta_data` (form o Google)
+- `public.my_team_id()` — SECURITY DEFINER, la `team_id` di chi è loggato
+- `public.is_super_admin()` — SECURITY DEFINER, `true` se `user_role = 'admin'`
+- `public.is_coach_of_my_team()` — SECURITY DEFINER, `true` se `user_role in ('coach', 'admin')`; un admin con una `team_id` propria viene trattato come coach di quella squadra (non delle altre: le policy che la usano richiedono sempre anche `team_id = my_team_id()`)
+- `public.is_coach_or_admin()` — funzione originale pre-multi-squadra, non più usata da nessuna policy (rimasta solo per compatibilità, si può rimuovere)
+- `public.handle_new_user()` — trigger su auth.users INSERT: crea automaticamente la riga in public.users con ruolo 'player', `is_active = false` (in attesa di approvazione, vedi Autenticazione), nome/cognome da `raw_user_meta_data` (form o Google); `team_id` resta NULL finché non si usa un link di invito
+- `public.resolve_team_by_invite_code(code)` / `public.claim_team_by_invite_code(code)` — vedi Autenticazione → iscrizione via link di invito
+- `public.set_event_team_id()` — trigger BEFORE INSERT su `events`: imposta `team_id` e `created_by` da chi crea l'evento
 
 ### Viste
-- `public.athlete_medical_status` — vista su `athlete_details` che espone solo `user_id, scadenza_visita_medica, addetto_dae, scadenza_dae`, leggibile da qualunque utente loggato (`grant select ... to authenticated`). Serve perché `athlete_details` è leggibile via RLS solo da coach/interessato: senza questa vista un giocatore normale non potrebbe vedere lo stato visita/DAE dei compagni nel badge "per tutti" di `/players` (bug scoperto e corretto in sessione: il badge sembrava dire "mancante" per chiunque non fosse il coach o l'interessato)
+- `public.athlete_medical_status` — vista su `athlete_details` filtrata per `team_id = my_team_id()`, espone solo `user_id, scadenza_visita_medica, addetto_dae, scadenza_dae`, leggibile da qualunque utente loggato (`grant select ... to authenticated`). Serve perché `athlete_details` è leggibile via RLS solo da coach/interessato: senza questa vista un giocatore normale non potrebbe vedere lo stato visita/DAE dei compagni nel badge "per tutti" di `/players` (bug scoperto e corretto in sessione: il badge sembrava dire "mancante" per chiunque non fosse il coach o l'interessato)
 
-### RLS
-Tutte le tabelle hanno RLS attiva. Le policy usano `is_coach_or_admin()` per evitare ricorsione infinita (bug noto se si usa una subquery diretta su `users` dentro una policy su `users`).
+### RLS (multi-squadra, dal 2026-09-26)
+Tutte le tabelle hanno RLS attiva, isolata per `team_id`. Le policy usano `my_team_id()` / `is_super_admin()` / `is_coach_of_my_team()` (vedi sopra) per evitare ricorsione infinita e per far rispettare l'isolamento tra squadre: un coach vede/modifica solo la propria squadra, un super-admin (`user_role='admin'`) vede tutte le `teams`/`users` ma non entra nel calendario/rosa delle squadre altrui a meno che non abbia anche lui una `team_id` (in quel caso è coach di quella soltanto).
 
-Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (policy `auth.uid() = id` / `auth.uid() = user_id`, per la pagina `/profile`). Il trigger `protect_coach_managed_fields` su `users` impedisce a chi non è coach/admin di modificare `user_role`, `court_role`, `jersey_number`, `is_active`, `email` anche aggirando la UI (li riporta al valore precedente lato DB). Bucket Storage `avatars`: lettura pubblica, scrittura solo nella propria cartella `{user_id}/...`.
+Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (policy `auth.uid() = id` / `auth.uid() = user_id`, per la pagina `/profile`). Il trigger `protect_coach_managed_fields` su `users` impedisce a chi non è coach/admin di modificare `user_role`, `court_role`, `jersey_number`, `is_active`, `email` anche aggirando la UI (li riporta al valore precedente lato DB); impedisce anche a chi non è super-admin di cambiare `team_id` (eccetto durante `claim_team_by_invite_code`) o di assegnare/togliere il ruolo `admin`. Bucket Storage `avatars`: lettura pubblica, scrittura solo nella propria cartella `{user_id}/...`.
+
+File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, non committati come "eseguiti automaticamente"): `migration_prod_step1_additive.sql` (schema), `migration_prod_step2_rls_switch.sql` (switch RLS), `migration_prod_phase2_invite.sql` (link di invito), `migration_prod_phase3_admin_as_coach.sql` (admin anche coach della propria squadra).
 
 ## Funzionalità implementate
 
 ### Autenticazione
 - Login/registrazione via Supabase Auth: email + password, oppure Google (`supabase.auth.signInWithOAuth({ provider: 'google' })`, stesso bottone su `/login` e `/register` — per un account Google è la stessa identica chiamata sia per il primo accesso che per quelli successivi)
 - **Recupero password**: `/forgot-password` (invia il link via `resetPasswordForEmail`) → `/reset-password` (imposta la nuova password dopo il click sul link). SMTP configurato (Resend, dominio sandbox `resend.dev`) — **funziona solo verso l'email del coach**: in sandbox Resend consegna solo all'indirizzo del proprio account, non ad altri giocatori, finché non si verifica un dominio proprio o si passa a Gmail SMTP. Nel frattempo, se un giocatore perde la password va reimpostata a mano dal coach (Supabase → Authentication → Users)
-- Ogni nuovo utente ha ruolo `player` di default
-- Per promuovere a `coach`: Table Editor Supabase → tabella `users` → cambia `user_role`
-- Chi ha ruolo `coach` o `admin` è considerato `isCoach` nell'app
+- **Iscrizione via link di invito** (`/register?team=<invite_code>`): la pagina risolve il codice via RPC `resolve_team_by_invite_code` e mostra il nome della squadra prima del form; blocca la registrazione con un link mancante/non valido; dopo la `signUp()` chiama `claim_team_by_invite_code` per assegnare `team_id`. Per Google, il codice viaggia nel redirect OAuth (`redirectTo=/calendar?claim_team=...`) e viene applicato da `RequireAuth` al ritorno, prima del gate "in attesa di approvazione"
+- Ogni nuovo utente ha ruolo `player` di default e `is_active = false` (in attesa di approvazione dal coach della sua squadra)
+- Per promuovere a `coach`: il coach/super-admin della squadra lo fa da `/players`; il **primo** coach di una squadra appena creata (nessuno ancora attivo che possa farlo) va attivato dal super-admin da `/admin`
+- Per promuovere a super-admin (`user_role='admin'`): nessuna UI, solo manualmente via SQL Editor/Table Editor Supabase — scelta deliberata, è un ruolo raro e ad alto privilegio
+- Chi ha ruolo `coach` o `admin` è considerato `isCoach` nell'app; solo chi ha ruolo `admin` è `isSuperAdmin` (vedi `/admin`)
 - Nota: un utente creato via Google potrebbe avere nome/cognome vuoti nella riga `users` se il trigger `handle_new_user` legge solo `raw_user_meta_data->>'first_name'/'last_name'` (popolati solo dalla registrazione via form) — in tal caso può sistemarli lui stesso da `/profile`
 
 ### Calendario (`/calendar`)
@@ -161,6 +180,13 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 - Vedi anche RLS/trigger `protect_coach_managed_fields` sopra: l'auto-modifica non può toccare ruolo/maglia/stato/email
 - Alert personale in cima alla pagina se la propria `scadenza_visita_medica` è scaduta o scade entro 15 giorni (visibile solo al proprietario del profilo; per il coach l'equivalente aggregato su tutta la squadra è in `/players`)
 
+### Admin (`/admin`)
+- Accessibile solo a `user_role='admin'` (super-admin globale); link dedicato nella bottom nav (terza voce, solo per lui)
+- **Nuova squadra**: form nome → crea riga `teams` (codice invito generato automaticamente dal default di colonna)
+- **Lista squadre**: stato attiva/disattivata (toggle), link di invito (`/register?team=<invite_code>`) con copia negli appunti, condivisione WhatsApp e rigenerazione codice (invalida subito il link precedente, richiede conferma)
+- **Membri per squadra** (sezione espandibile): nome, email, ruolo, stato; per un membro in attesa (`is_active=false`) due pulsanti — "Attiva coach" (`user_role='coach'`, `is_active=true`, pensato per il primo coach di una squadra appena creata, che altrimenti non avrebbe nessuno che lo attivi) e "Attiva" (come semplice giocatore)
+- Non permette di creare/assegnare il ruolo `admin` né di eliminare una squadra — entrambe operazioni rare e ad alto rischio, lasciate a SQL Editor/Table Editor manuale
+
 ## Convenzioni di sviluppo
 - Ogni componente pagina ha una funzione interna `*Content()` avvolta da `<RequireAuth>`
 - `isCoach` viene da `useAuth()` e vale `true` per ruoli `coach` e `admin`
@@ -187,6 +213,8 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 - [x] Statistiche giocatori: partite giocate, volte titolare, volte cambio (Rosa squadra → "📊 Statistiche partite", solo coach)
 - [ ] Statistiche giocatori: presenze e set giocati (manca ancora)
 - [x] Pagina profilo personale per ogni giocatore (`/profile` — dati anagrafici e foto; ruolo/maglia restano al coach)
+- [x] Multi-squadra: schema + RLS isolata per `team_id`, iscrizione via link di invito (`/register?team=...`), console super-admin `/admin` per creare squadre e attivare il primo coach
+- [ ] Multi-squadra: onboarding di una seconda squadra reale (oggi esiste solo "Dindiats Volley" — l'isolamento è a posto lato dati/RLS ma non è ancora stato provato con una seconda squadra vera)
 
 ## Note importanti
 - Il file `.env.local` contiene le chiavi Supabase e NON va committato (già in .gitignore)

@@ -8,17 +8,19 @@ import { supabase } from '@/lib/supabase';
 
 /**
  * Avvolgi una pagina con <RequireAuth> per obbligare il login.
- * Passa coachOnly per limitare la pagina a coach/admin
- * (es. una futura pagina di amministrazione avanzata).
+ * Passa coachOnly per limitare la pagina a coach/admin, oppure
+ * superAdminOnly per limitarla al solo ruolo admin (es. /admin).
  */
 export default function RequireAuth({
   children,
   coachOnly = false,
+  superAdminOnly = false,
 }: {
   children: ReactNode;
   coachOnly?: boolean;
+  superAdminOnly?: boolean;
 }) {
-  const { user, profile, loading, isCoach, signOut, refreshProfile } = useAuth();
+  const { user, profile, loading, isCoach, isSuperAdmin, signOut, refreshProfile } = useAuth();
   const router = useRouter();
   const { showError } = useToast();
 
@@ -28,10 +30,14 @@ export default function RequireAuth({
       router.replace('/login');
       return;
     }
+    if (superAdminOnly && !isSuperAdmin) {
+      router.replace('/calendar');
+      return;
+    }
     if (coachOnly && !isCoach) {
       router.replace('/calendar');
     }
-  }, [loading, user, isCoach, coachOnly, router]);
+  }, [loading, user, isCoach, isSuperAdmin, coachOnly, superAdminOnly, router]);
 
   // Arrivo da "Registrati con Google" con un invito squadra in sospeso:
   // l'OAuth fa uscire e rientrare dall'app, quindi il codice invito non
@@ -66,7 +72,7 @@ export default function RequireAuth({
   // (es. appena dopo il login): finché non arriva mostriamo solo "Caricamento…", mai
   // la schermata "in attesa di approvazione", che si applica solo a un profilo già
   // arrivato e effettivamente non attivo.
-  if (loading || !user || (coachOnly && !isCoach) || !profile) {
+  if (loading || !user || (superAdminOnly && !isSuperAdmin) || (coachOnly && !isCoach) || !profile) {
     return (
       <div className="p-8 text-center text-slate-500">Caricamento…</div>
     );

@@ -12,7 +12,7 @@ const TABS = [
 ];
 
 export default function NavBar() {
-  const { user, profile, isCoach, signOut } = useAuth();
+  const { user, profile, isCoach, isSuperAdmin, signOut } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [medicalExpiring, setMedicalExpiring] = useState(false);
@@ -92,8 +92,8 @@ export default function NavBar() {
         className="fixed bottom-0 inset-x-0 z-30 bg-white border-t print:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="max-w-4xl mx-auto grid grid-cols-2 gap-2 p-2">
-          {TABS.map((tab) => {
+        <div className={`max-w-4xl mx-auto grid gap-2 p-2 ${isSuperAdmin ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {(isSuperAdmin ? [...TABS, { href: '/admin', label: 'Admin', icon: '⚙️' }] : TABS).map((tab) => {
             const active = pathname?.startsWith(tab.href);
             return (
               <Link

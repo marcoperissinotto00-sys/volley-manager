@@ -11,6 +11,17 @@ type EventType = 'training' | 'match' | 'event';
 type AttendanceStatus = 'present' | 'late' | 'maybe' | 'absent';
 type FilterTab = 'all' | 'training' | 'match';
 
+interface StandingRow {
+  pos: number;
+  team: string;
+  points: number;
+  played: number;
+  won: number;
+  lost: number;
+  setsWon: number;
+  setsLost: number;
+}
+
 const EVENT_TYPE_LABELS: Record<EventType, string> = {
   training: 'Allenamento',
   match: 'Partita',
@@ -171,6 +182,12 @@ function CalendarPageContent() {
   const [gridLoading, setGridLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
+  // Classifica del girone (dati esterni, letti al volo da /api/classifica)
+  const [showStandings, setShowStandings] = useState(false);
+  const [standings, setStandings] = useState<StandingRow[] | null>(null);
+  const [standingsLoading, setStandingsLoading] = useState(false);
+  const [standingsError, setStandingsError] = useState<string | null>(null);
+
   // Paginazione
   const [currentPage, setCurrentPage] = useState(1);
   const [totalEvents, setTotalEvents] = useState(0);
@@ -313,6 +330,21 @@ function CalendarPageContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, calendarMonth, filterTab]);
+
+  async function loadStandings() {
+    if (standings || standingsLoading) return;
+    setStandingsLoading(true);
+    setStandingsError(null);
+    try {
+      const res = await fetch('/api/classifica');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Errore');
+      setStandings(data.standings as StandingRow[]);
+    } catch {
+      setStandingsError('Classifica non disponibile al momento.');
+    }
+    setStandingsLoading(false);
+  }
 
   const eventsByDay = useMemo(() => {
     const map: Record<string, EventRow[]> = {};
@@ -557,6 +589,48 @@ function CalendarPageContent() {
         </div>
         <button onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
           className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">›</button>
+      </div>
+
+      {/* Classifica del girone — dati esterni, letti al volo */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <button
+          onClick={() => { const next = !showStandings; setShowStandings(next); if (next) loadStandings(); }}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-slate-900 active:bg-slate-50 transition-colors">
+          <span>🏆 Classifica</span>
+          <span className="text-slate-400">{showStandings ? '▴' : '▾'}</span>
+        </button>
+        {showStandings && (
+          <div className="px-3 pb-3">
+            {standingsLoading && <div className="py-4 text-center text-slate-400 text-sm">Caricamento…</div>}
+            {standingsError && <div className="py-4 text-center text-red-500 text-sm">{standingsError}</div>}
+            {standings && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase text-[10px]">
+                      <th className="text-left font-semibold py-1 pr-1">#</th>
+                      <th className="text-left font-semibold py-1">Squadra</th>
+                      <th className="text-right font-semibold py-1 px-1.5">Pt</th>
+                      <th className="text-right font-semibold py-1 px-1.5">V-P</th>
+                      <th className="text-right font-semibold py-1 pl-1.5">Set</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {standings.map((s) => (
+                      <tr key={s.team} className={s.team === 'Dindiats Volley' ? 'bg-blue-50 font-bold text-blue-900' : 'text-slate-700'}>
+                        <td className="py-1.5 pr-1 tabular-nums">{s.pos}</td>
+                        <td className="py-1.5 truncate max-w-[9rem]">{s.team}</td>
+                        <td className="py-1.5 px-1.5 text-right tabular-nums">{s.points}</td>
+                        <td className="py-1.5 px-1.5 text-right tabular-nums">{s.won}-{s.lost}</td>
+                        <td className="py-1.5 pl-1.5 text-right tabular-nums">{s.setsWon}-{s.setsLost}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {viewMode === 'grid' ? (
