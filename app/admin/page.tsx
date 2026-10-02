@@ -103,6 +103,50 @@ function AdminPageContent() {
     fetchAll();
   }
 
+  async function deleteTeam(team: TeamRow) {
+    if (!confirm(
+      `Eliminare DEFINITIVAMENTE la squadra "${team.name}"?\n\n` +
+      `Vengono cancellati tutti i suoi eventi (allenamenti, partite, presenze, formazioni). ` +
+      `I membri restano come utenti ma perdono l'associazione alla squadra.\n\n` +
+      `Questa azione non si può annullare.`
+    )) return;
+
+    setBusyTeamId(team.id);
+
+    const { data: teamEvents, error: eventsFetchError } = await supabase.from('events').select('id').eq('team_id', team.id);
+    if (eventsFetchError) { setBusyTeamId(null); showError(`Impossibile eliminare: ${eventsFetchError.message}`); return; }
+    const eventIds = (teamEvents || []).map((e) => e.id);
+
+    if (eventIds.length > 0) {
+      const { data: teamMatches, error: matchesFetchError } = await supabase.from('matches').select('id').in('event_id', eventIds);
+      if (matchesFetchError) { setBusyTeamId(null); showError(`Impossibile eliminare: ${matchesFetchError.message}`); return; }
+      const matchIds = (teamMatches || []).map((m) => m.id);
+
+      if (matchIds.length > 0) {
+        const { error } = await supabase.from('match_set_stats').delete().in('match_id', matchIds);
+        if (error) { setBusyTeamId(null); showError(`Impossibile eliminare: ${error.message}`); return; }
+      }
+
+      const deletes = await Promise.all([
+        supabase.from('matches').delete().in('event_id', eventIds),
+        supabase.from('attendances').delete().in('event_id', eventIds),
+      ]);
+      const relatedError = deletes.find((d) => d.error)?.error;
+      if (relatedError) { setBusyTeamId(null); showError(`Impossibile eliminare: ${relatedError.message}`); return; }
+
+      const { error: eventsDeleteError } = await supabase.from('events').delete().eq('team_id', team.id);
+      if (eventsDeleteError) { setBusyTeamId(null); showError(`Impossibile eliminare: ${eventsDeleteError.message}`); return; }
+    }
+
+    const { error: unassignError } = await supabase.from('users').update({ team_id: null }).eq('team_id', team.id);
+    if (unassignError) { setBusyTeamId(null); showError(`Impossibile eliminare: ${unassignError.message}`); return; }
+
+    const { error } = await supabase.from('teams').delete().eq('id', team.id);
+    setBusyTeamId(null);
+    if (error) { showError(`Impossibile eliminare: ${error.message}`); return; }
+    fetchAll();
+  }
+
   async function regenerateInviteCode(team: TeamRow) {
     if (!confirm(`Rigenerare il link di invito di "${team.name}"? Il link attuale smetterà subito di funzionare.`)) return;
     setBusyTeamId(team.id);
@@ -206,10 +250,16 @@ function AdminPageContent() {
                     {team.is_active ? '● Attiva' : '● Disattivata'}
                   </span>
                 </div>
-                <button onClick={() => toggleTeamActive(team)} disabled={busyTeamId === team.id}
-                  className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg active:scale-95 transition-all disabled:opacity-50">
-                  {team.is_active ? 'Disattiva' : 'Attiva'}
-                </button>
+                <div className="flex gap-1.5 shrink-0">
+                  <button onClick={() => toggleTeamActive(team)} disabled={busyTeamId === team.id}
+                    className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg active:scale-95 transition-all disabled:opacity-50">
+                    {team.is_active ? 'Disattiva' : 'Attiva'}
+                  </button>
+                  <button onClick={() => deleteTeam(team)} disabled={busyTeamId === team.id}
+                    className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-semibold rounded-lg active:scale-95 transition-all disabled:opacity-50">
+                    Elimina
+                  </button>
+                </div>
               </div>
 
               <div className="bg-slate-50 rounded-xl p-3 space-y-2">

@@ -183,8 +183,8 @@ File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, no
 - Accessibile solo a `user_role='admin'` (super-admin globale); link dedicato nella bottom nav (terza voce, solo per lui)
 - **Nuova squadra**: form nome → crea riga `teams` (codice invito generato automaticamente dal default di colonna)
 - **Lista squadre**: stato attiva/disattivata (toggle), link di invito (`/register?team=<invite_code>`) con copia negli appunti, condivisione WhatsApp e rigenerazione codice (invalida subito il link precedente, richiede conferma)
-- **Membri per squadra** (sezione espandibile): nome, email, ruolo, stato; per un membro in attesa (`is_active=false`) due pulsanti — "Attiva coach" (`user_role='coach'`, `is_active=true`, pensato per il primo coach di una squadra appena creata, che altrimenti non avrebbe nessuno che lo attivi) e "Attiva" (come semplice giocatore)
-- Non permette di creare/assegnare il ruolo `admin` né di eliminare una squadra — entrambe operazioni rare e ad alto rischio, lasciate a SQL Editor/Table Editor manuale
+- **Membri per squadra** (sezione espandibile): nome, email, ruolo, stato; per un membro in attesa (`is_active=false`) due pulsanti — "Attiva coach" (`user_role='coach'`, `is_active=true`, pensato per il primo coach di una squadra appena creata, che altrimenti non avrebbe nessuno che lo attivi) e "Attiva" (come semplice giocatore); ogni membro ha anche "Elimina" (stesso comportamento distruttivo di `/players`: cancella `athlete_details`/`attendances`/`match_set_stats`, poi la riga `users`, account Auth intatto)
+- **Elimina squadra** (pulsante rosso sulla card, conferma nativa del browser): cancella in cascata `match_set_stats` → `matches` → `attendances` → `events` della squadra, poi libera i membri (`users.team_id = null`, restano come utenti) e infine la riga `teams`. Irreversibile. Non permette invece di creare/assegnare il ruolo `admin` — operazione rara e ad alto rischio, lasciata a SQL Editor/Table Editor manuale
 
 ## Convenzioni di sviluppo
 - Ogni componente pagina ha una funzione interna `*Content()` avvolta da `<RequireAuth>`
