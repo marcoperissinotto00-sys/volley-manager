@@ -12,7 +12,7 @@ const TABS = [
 ];
 
 export default function NavBar() {
-  const { user, profile, isCoach, isSuperAdmin, signOut } = useAuth();
+  const { user, profile, team, isCoach, isSuperAdmin, signOut } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [medicalExpiring, setMedicalExpiring] = useState(false);
@@ -49,7 +49,7 @@ export default function NavBar() {
                 <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover border" />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src="/icon.png" alt="" className="w-7 h-7 rounded-full object-cover border" />
+                <img src={team?.logo_url || '/icon.png'} alt="" className="w-7 h-7 rounded-full object-cover border" />
               )}
               {medicalExpiring && (
                 <span
@@ -77,15 +77,17 @@ export default function NavBar() {
             >
               📖
             </a>
-            <a
-              href="/documents/norme-partecipazione-giv-tonic-2026-2027.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Regolamento del campionato"
-              className="px-2.5 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm transition-all"
-            >
-              📋
-            </a>
+            {team?.regolamento_url && (
+              <a
+                href={team.regolamento_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Regolamento del campionato"
+                className="px-2.5 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm transition-all"
+              >
+                📋
+              </a>
+            )}
             <button
               onClick={handleSignOut}
               className="px-3 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm font-medium transition-all"

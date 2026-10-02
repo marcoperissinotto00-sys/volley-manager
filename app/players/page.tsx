@@ -74,7 +74,8 @@ interface PlayerRow {
 }
 
 function PlayersPageContent() {
-  const { isCoach, profile } = useAuth();
+  const { isCoach, profile, team, refreshTeam } = useAuth();
+  const [logoUploading, setLogoUploading] = useState(false);
   const { showError } = useToast();
 
   const [players, setPlayers] = useState<PlayerRow[]>([]);
@@ -178,6 +179,25 @@ function PlayersPageContent() {
     } catch {
       showError('Impossibile copiare il link: selezionalo e copialo a mano.');
     }
+  }
+
+  async function uploadTeamLogo(file: File) {
+    if (!profile?.team_id) return;
+    setLogoUploading(true);
+    const ext = file.name.split('.').pop() || 'png';
+    const path = `${profile.team_id}/logo.${ext}`;
+    const { error: uploadError } = await supabase.storage.from('team-logos').upload(path, file, { upsert: true });
+    if (uploadError) {
+      setLogoUploading(false);
+      showError(`Impossibile caricare il logo: ${uploadError.message}`);
+      return;
+    }
+    const { data: publicUrlData } = supabase.storage.from('team-logos').getPublicUrl(path);
+    const logoUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+    const { error } = await supabase.rpc('set_my_team_logo', { p_logo_url: logoUrl });
+    setLogoUploading(false);
+    if (error) { showError(`Impossibile salvare il logo: ${error.message}`); return; }
+    await refreshTeam();
   }
 
   function teamInviteWhatsappUrl() {
@@ -447,6 +467,34 @@ function PlayersPageContent() {
               className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg active:scale-95 transition-all">
               📤 WhatsApp
             </a>
+          </div>
+        </div>
+      )}
+
+      {isCoach && (
+        <div className="bg-white rounded-xl shadow border p-4 flex items-center gap-3">
+          {team?.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={team.logo_url} alt="" className="w-12 h-12 rounded-full object-cover border shrink-0" />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-slate-100 border shrink-0" />
+          )}
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Logo squadra</div>
+            <label className="inline-block mt-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg active:scale-95 transition-all cursor-pointer">
+              {logoUploading ? 'Caricamento…' : team?.logo_url ? 'Cambia logo' : 'Carica logo'}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={logoUploading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) uploadTeamLogo(file);
+                }}
+              />
+            </label>
           </div>
         </div>
       )}

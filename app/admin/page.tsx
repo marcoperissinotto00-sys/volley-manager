@@ -11,6 +11,8 @@ interface TeamRow {
   invite_code: string;
   is_active: boolean;
   created_at: string;
+  logo_url: string | null;
+  regolamento_url: string | null;
 }
 
 interface MemberRow {
@@ -47,6 +49,7 @@ function AdminPageContent() {
   const [creating, setCreating] = useState(false);
 
   const [busyTeamId, setBusyTeamId] = useState<string | null>(null);
+  const [regoBusyTeamId, setRegoBusyTeamId] = useState<string | null>(null);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const [copiedTeamId, setCopiedTeamId] = useState<string | null>(null);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
@@ -156,6 +159,34 @@ function AdminPageContent() {
     fetchAll();
   }
 
+  async function uploadRegolamento(team: TeamRow, file: File) {
+    setRegoBusyTeamId(team.id);
+    const ext = file.name.split('.').pop() || 'pdf';
+    const path = `${team.id}/regolamento.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from('team-documents')
+      .upload(path, file, { upsert: true });
+    if (uploadError) {
+      setRegoBusyTeamId(null);
+      showError(`Impossibile caricare il regolamento: ${uploadError.message}`);
+      return;
+    }
+    const { data: publicUrlData } = supabase.storage.from('team-documents').getPublicUrl(path);
+    const regolamento_url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+    const { error } = await supabase.from('teams').update({ regolamento_url }).eq('id', team.id);
+    setRegoBusyTeamId(null);
+    if (error) { showError(`Impossibile salvare il regolamento: ${error.message}`); return; }
+    fetchAll();
+  }
+
+  async function removeRegolamento(team: TeamRow) {
+    setRegoBusyTeamId(team.id);
+    const { error } = await supabase.from('teams').update({ regolamento_url: null }).eq('id', team.id);
+    setRegoBusyTeamId(null);
+    if (error) { showError(`Impossibile rimuovere il regolamento: ${error.message}`); return; }
+    fetchAll();
+  }
+
   function inviteLink(team: TeamRow) {
     return `${origin}/register?team=${team.invite_code}`;
   }
@@ -244,11 +275,17 @@ function AdminPageContent() {
           return (
             <div key={team.id} className="bg-white rounded-2xl shadow-sm border p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-bold text-slate-900">{team.name}</h3>
-                  <span className={`text-xs font-semibold ${team.is_active ? 'text-green-600' : 'text-slate-400'}`}>
-                    {team.is_active ? '● Attiva' : '● Disattivata'}
-                  </span>
+                <div className="flex items-center gap-2.5">
+                  {team.logo_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={team.logo_url} alt="" className="w-8 h-8 rounded-full object-cover border shrink-0" />
+                  )}
+                  <div>
+                    <h3 className="font-bold text-slate-900">{team.name}</h3>
+                    <span className={`text-xs font-semibold ${team.is_active ? 'text-green-600' : 'text-slate-400'}`}>
+                      {team.is_active ? '● Attiva' : '● Disattivata'}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
                   <button onClick={() => toggleTeamActive(team)} disabled={busyTeamId === team.id}
@@ -279,6 +316,38 @@ function AdminPageContent() {
                     ↻ Rigenera
                   </button>
                 </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                <div className="text-xs text-slate-500">Regolamento del campionato</div>
+                {team.regolamento_url ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a href={team.regolamento_url} target="_blank" rel="noopener noreferrer"
+                      className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg active:scale-95 transition-all">
+                      📋 Apri regolamento
+                    </a>
+                    <button onClick={() => removeRegolamento(team)} disabled={regoBusyTeamId === team.id}
+                      className="px-2.5 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded-lg active:scale-95 transition-all disabled:opacity-50">
+                      Rimuovi
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400">Nessun regolamento caricato.</div>
+                )}
+                <label className="inline-block px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-semibold rounded-lg active:scale-95 transition-all cursor-pointer">
+                  {regoBusyTeamId === team.id ? 'Caricamento…' : '📄 Carica PDF'}
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    disabled={regoBusyTeamId === team.id}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (file) uploadRegolamento(team, file);
+                    }}
+                  />
+                </label>
               </div>
 
               <button onClick={() => setExpandedTeamId(expanded ? null : team.id)}

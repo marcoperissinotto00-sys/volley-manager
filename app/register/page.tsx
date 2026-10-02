@@ -12,6 +12,7 @@ function RegisterForm() {
   const { showError } = useToast();
 
   const [teamName, setTeamName] = useState<string | null>(null);
+  const [teamLogo, setTeamLogo] = useState<string | null>(null);
   const [resolvingTeam, setResolvingTeam] = useState(true);
   const [invalidTeam, setInvalidTeam] = useState(false);
 
@@ -36,12 +37,13 @@ function RegisterForm() {
     (async () => {
       const { data, error } = await supabase
         .rpc('resolve_team_by_invite_code', { p_invite_code: teamCode })
-        .maybeSingle<{ id: string; name: string }>();
+        .maybeSingle<{ id: string; name: string; logo_url: string | null }>();
       if (cancelled) return;
       if (error || !data) {
         setInvalidTeam(true);
       } else {
         setTeamName(data.name);
+        setTeamLogo(data.logo_url);
       }
       setResolvingTeam(false);
     })();
@@ -147,7 +149,7 @@ function RegisterForm() {
       <div className="w-full max-w-sm bg-white p-8 rounded-xl shadow">
         <div className="text-center mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.png" alt="" className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border" />
+          <img src={teamLogo || '/icon.png'} alt="" className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border" />
           <h1 className="text-2xl font-bold text-slate-900">Unisciti alla squadra</h1>
           <p className="text-sm text-slate-500 mt-1">Crea il tuo account giocatore</p>
         </div>

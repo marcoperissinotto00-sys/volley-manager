@@ -10,25 +10,27 @@
 ## Struttura cartelle rilevante
 ```
 app/
-  layout.tsx          — Root layout con AuthProvider, ToastProvider e NavBar
-  manifest.ts          — Manifest PWA (installabile su home screen)
-  icon.png / apple-icon.png — Icone app: mascotte "Dindiats Volley" (tacchino con pallone), ritagliata da un'immagine fornita dall'utente
+  layout.tsx          — Root layout con AuthProvider, ToastProvider, TeamBranding e NavBar
+  manifest.ts          — Manifest PWA di default (installabile su home screen); personalizzato per squadra via TeamBranding + /api/team-manifest/[teamId]
+  icon.png / apple-icon.png — Icone app di default: mascotte "Dindiats Volley" (tacchino con pallone), usate finché una squadra non carica un proprio logo
+  api/team-manifest/[teamId]/route.ts — Manifest PWA dinamico per squadra (nome + logo), usato dal link <link rel="manifest"> che TeamBranding punta alla squadra dell'utente loggato
   page.tsx            — Redirect a /calendar
   login/page.tsx      — Login via Supabase Auth (email/password + Google)
-  register/page.tsx   — Registrazione (ruolo default: player), anche via Google
+  register/page.tsx   — Registrazione (ruolo default: player), anche via Google; mostra nome e logo della squadra risolti dal link di invito
   forgot-password/page.tsx — Richiesta link di recupero password
   reset-password/page.tsx  — Imposta nuova password (dopo il link ricevuto via email)
   calendar/page.tsx   — Calendario eventi con RSVP, appello, navigazione per mese, crea/modifica/elimina evento
-  players/page.tsx    — Rosa squadra (users + athlete_details) + statistiche partite
+  players/page.tsx    — Rosa squadra (users + athlete_details) + statistiche partite; sezione coach-only per caricare il logo della propria squadra
   match/[id]/page.tsx — Gestione partita: formazioni per set (titolare/cambio/libero) + risultato
   profile/page.tsx    — "Il mio profilo": ogni utente modifica i propri dati anagrafici e la foto (ruolo/maglia restano gestiti dal coach)
-  admin/page.tsx      — Console super-admin (solo user_role='admin'): crea squadre, genera/rigenera link di invito, attiva il primo coach di una nuova squadra
+  admin/page.tsx      — Console super-admin (solo user_role='admin'): crea squadre, genera/rigenera link di invito, attiva il primo coach di una nuova squadra, carica/rimuove il regolamento (PDF) di ogni squadra
 components/
-  NavBar.tsx          — Header con identità/logout (link a /profile), 📖 guida app + 📋 regolamento, bottom tab bar (Calendario/Rosa, +Admin per i super-admin)
+  NavBar.tsx          — Header con identità/logout (link a /profile), 📖 guida app + 📋 regolamento della propria squadra (nascosto se non caricato), bottom tab bar (Calendario/Rosa, +Admin per i super-admin); avatar di fallback mostra il logo della squadra
+  TeamBranding.tsx    — Componente invisibile che, appena nota la squadra dell'utente, aggiorna <link rel="manifest">, <link rel="apple-touch-icon">, <meta apple-mobile-web-app-title> e document.title con nome/logo della squadra (per il nome+icona mostrati quando si "Aggiunge a Home")
   RequireAuth.tsx     — Protezione pagine (coachOnly per /match)
 lib/
   supabase.ts         — Client Supabase (chiavi da .env.local)
-  auth-context.tsx    — Context React: user, profile, isCoach, signOut
+  auth-context.tsx    — Context React: user, profile, team (nome/logo/regolamento della propria squadra), isCoach, signOut
   toast-context.tsx   — Context React: showError(messaggio), notifiche di errore uniformi
 ```
 
@@ -41,6 +43,8 @@ lib/
 - `name` varchar
 - `invite_code` text UNIQUE — generato random (8 caratteri), usato nel link `/register?team=<invite_code>`
 - `is_active` bool
+- `logo_url` text — logo della squadra (Supabase Storage, bucket `team-logos`, pubblico in lettura); caricato dall'allenatore da `/players`, mostrato in NavBar (fallback avatar), `/register` e sull'icona "Aggiungi a Home" (vedi `TeamBranding`)
+- `regolamento_url` text — regolamento del campionato della squadra (Supabase Storage, bucket `team-documents`, pubblico in lettura); caricato solo dal super-admin da `/admin` (ogni squadra può giocare un campionato con regole diverse), mostrato in NavBar (📋, nascosto se non impostato)
 - `created_at` timestamptz, `created_by` uuid FK → users.id
 
 **`users`** — profilo utente (collegato 1:1 a auth.users)
@@ -107,7 +111,9 @@ lib/
 - `public.is_super_admin()` — SECURITY DEFINER, `true` se `user_role = 'admin'`
 - `public.is_coach_of_my_team()` — SECURITY DEFINER, `true` se `user_role in ('coach', 'admin')`; un admin con una `team_id` propria viene trattato come coach di quella squadra (non delle altre: le policy che la usano richiedono sempre anche `team_id = my_team_id()`)
 - `public.handle_new_user()` — trigger su auth.users INSERT: crea automaticamente la riga in public.users con ruolo 'player', `is_active = false` (in attesa di approvazione, vedi Autenticazione), nome/cognome da `raw_user_meta_data` (form o Google); `team_id` resta NULL finché non si usa un link di invito
-- `public.resolve_team_by_invite_code(code)` / `public.claim_team_by_invite_code(code)` — vedi Autenticazione → iscrizione via link di invito
+- `public.resolve_team_by_invite_code(code)` / `public.claim_team_by_invite_code(code)` — vedi Autenticazione → iscrizione via link di invito; `resolve_team_by_invite_code` restituisce anche `logo_url`
+- `public.get_team_branding(team_id)` — SECURITY DEFINER, concessa anche ad "anon": nome+logo di una squadra per id, senza RLS. Usata server-side da `/api/team-manifest/[teamId]` (nessuna sessione lì: il client Supabase usa solo la chiave anon)
+- `public.set_my_team_logo(logo_url)` — SECURITY DEFINER: aggiorna `logo_url` solo sulla squadra di chi chiama, solo se `is_coach_of_my_team()`. Unico modo (oltre a Table Editor) per un non-admin di scrivere su `teams`, perché `teams_update` resta solo-super-admin (vedi sotto) — stesso pattern di `claim_team_by_invite_code`
 - `public.set_event_team_id()` — trigger BEFORE INSERT su `events`: imposta `team_id` e `created_by` da chi crea l'evento
 
 ### Viste
@@ -116,16 +122,18 @@ lib/
 ### RLS (multi-squadra, dal 2026-09-26)
 Tutte le tabelle hanno RLS attiva, isolata per `team_id`. Le policy usano `my_team_id()` / `is_super_admin()` / `is_coach_of_my_team()` (vedi sopra) per evitare ricorsione infinita e per far rispettare l'isolamento tra squadre: un coach vede/modifica solo la propria squadra, un super-admin (`user_role='admin'`) vede tutte le `teams`/`users` ma non entra nel calendario/rosa delle squadre altrui a meno che non abbia anche lui una `team_id` (in quel caso è coach di quella soltanto).
 
-Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (policy `auth.uid() = id` / `auth.uid() = user_id`, per la pagina `/profile`). Il trigger `protect_coach_managed_fields` su `users` impedisce a chi non è coach/admin di modificare `user_role`, `court_role`, `jersey_number`, `is_active`, `email` anche aggirando la UI (li riporta al valore precedente lato DB); impedisce anche a chi non è super-admin di cambiare `team_id` (eccetto durante `claim_team_by_invite_code`) o di assegnare/togliere il ruolo `admin`. Bucket Storage `avatars`: lettura pubblica, scrittura solo nella propria cartella `{user_id}/...`.
+Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (policy `auth.uid() = id` / `auth.uid() = user_id`, per la pagina `/profile`). Il trigger `protect_coach_managed_fields` su `users` impedisce a chi non è coach/admin di modificare `user_role`, `court_role`, `jersey_number`, `is_active`, `email` anche aggirando la UI (li riporta al valore precedente lato DB); impedisce anche a chi non è super-admin di cambiare `team_id` (eccetto durante `claim_team_by_invite_code`) o di assegnare/togliere il ruolo `admin`. La tabella `teams` resta scrivibile via RLS solo dal super-admin (`teams_update`): l'allenatore aggiorna il proprio `logo_url` solo tramite l'RPC `set_my_team_logo`, non con una UPDATE diretta.
 
-File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, non committati come "eseguiti automaticamente"): `migration_prod_step1_additive.sql` (schema), `migration_prod_step2_rls_switch.sql` (switch RLS), `migration_prod_phase2_invite.sql` (link di invito), `migration_prod_phase3_admin_as_coach.sql` (admin anche coach della propria squadra).
+Bucket Storage: `avatars` (pubblico in lettura, scrittura solo nella propria cartella `{user_id}/...`), `team-logos` (pubblico in lettura, scrittura solo nella cartella `{team_id}/...` e solo da chi è `is_coach_of_my_team()` di quella squadra), `team-documents` (pubblico in lettura, scrittura solo dal super-admin).
+
+File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, non committati come "eseguiti automaticamente"): `migration_prod_step1_additive.sql` (schema), `migration_prod_step2_rls_switch.sql` (switch RLS), `migration_prod_phase2_invite.sql` (link di invito), `migration_prod_phase3_admin_as_coach.sql` (admin anche coach della propria squadra), `migration_prod_team_branding.sql` (logo e regolamento per squadra).
 
 ## Funzionalità implementate
 
 ### Autenticazione
 - Login/registrazione via Supabase Auth: email + password, oppure Google (`supabase.auth.signInWithOAuth({ provider: 'google' })`, stesso bottone su `/login` e `/register` — per un account Google è la stessa identica chiamata sia per il primo accesso che per quelli successivi)
 - **Recupero password**: `/forgot-password` (invia il link via `resetPasswordForEmail`) → `/reset-password` (imposta la nuova password dopo il click sul link). SMTP configurato (Resend, dominio sandbox `resend.dev`) — **funziona solo verso l'email del coach**: in sandbox Resend consegna solo all'indirizzo del proprio account, non ad altri giocatori, finché non si verifica un dominio proprio o si passa a Gmail SMTP. Nel frattempo, se un giocatore perde la password va reimpostata a mano dal coach (Supabase → Authentication → Users)
-- **Iscrizione via link di invito** (`/register?team=<invite_code>`): la pagina risolve il codice via RPC `resolve_team_by_invite_code` e mostra il nome della squadra prima del form; blocca la registrazione con un link mancante/non valido; dopo la `signUp()` chiama `claim_team_by_invite_code` per assegnare `team_id`. Per Google, il codice viaggia nel redirect OAuth (`redirectTo=/calendar?claim_team=...`) e viene applicato da `RequireAuth` al ritorno, prima del gate "in attesa di approvazione"
+- **Iscrizione via link di invito** (`/register?team=<invite_code>`): la pagina risolve il codice via RPC `resolve_team_by_invite_code` e mostra nome e logo della squadra prima del form (logo generico se la squadra non ne ha ancora caricato uno); blocca la registrazione con un link mancante/non valido; dopo la `signUp()` chiama `claim_team_by_invite_code` per assegnare `team_id`. Per Google, il codice viaggia nel redirect OAuth (`redirectTo=/calendar?claim_team=...`) e viene applicato da `RequireAuth` al ritorno, prima del gate "in attesa di approvazione"
 - Ogni nuovo utente ha ruolo `player` di default e `is_active = false` (in attesa di approvazione dal coach della sua squadra)
 - Per promuovere a `coach`: il coach/super-admin della squadra lo fa da `/players`; il **primo** coach di una squadra appena creata (nessuno ancora attivo che possa farlo) va attivato dal super-admin da `/admin`
 - Per promuovere a super-admin (`user_role='admin'`): nessuna UI, solo manualmente via SQL Editor/Table Editor Supabase — scelta deliberata, è un ruolo raro e ad alto privilegio
@@ -167,6 +175,7 @@ File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, no
 - **"📊 Statistiche partite"** (solo coach, sezione collassabile): per ogni giocatore, partite giocate (match distinti), volte titolare, volte cambio — aggregato client-side da `match_set_stats`
 - Form modifica: ruolo squadra, ruolo in campo, numero maglia sempre visibili; anagrafica, residenza, certificati sono sezioni collassabili (aperte di default solo se il giocatore ha già dati in quella sezione)
 - Nuovi giocatori si aggiungono registrandosi da `/register`
+- **Logo squadra** (solo coach, card dedicata in cima alla pagina): upload su Storage bucket `team-logos/{team_id}/logo.<ext>` (`upsert: true`), poi `set_my_team_logo` (RPC) aggiorna `teams.logo_url` con l'URL pubblico + `?t=timestamp` — stesso pattern dell'avatar personale in `/profile`, ma a livello di squadra e via RPC (il coach non ha UPDATE diretto su `teams`)
 - Avatar: se `avatar_url` è presente viene mostrato al posto del cerchio con `#numero maglia` (il numero, se presente, si sposta accanto all'email)
 - Badge visita medica/DAE (visibili a tutti, non solo al coach): non mostrano la scadenza ma solo lo stato — "✓/✕ Visita medica" in base a `scadenza_visita_medica >= oggi`; "✓ DAE" (verde) o "⚠ DAE scaduto" (ambra) solo se `addetto_dae` è vero
 - Alert coach "⚠️ Visite mediche in scadenza" in cima alla pagina: elenca chi ha la visita medica scaduta o in scadenza entro 15 giorni (con data), solo se `isCoach`
@@ -185,6 +194,10 @@ File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, no
 - **Lista squadre**: stato attiva/disattivata (toggle), link di invito (`/register?team=<invite_code>`) con copia negli appunti, condivisione WhatsApp e rigenerazione codice (invalida subito il link precedente, richiede conferma)
 - **Membri per squadra** (sezione espandibile): nome, email, ruolo, stato; per un membro in attesa (`is_active=false`) due pulsanti — "Attiva coach" (`user_role='coach'`, `is_active=true`, pensato per il primo coach di una squadra appena creata, che altrimenti non avrebbe nessuno che lo attivi) e "Attiva" (come semplice giocatore); ogni membro ha anche "Elimina" (stesso comportamento distruttivo di `/players`: cancella `athlete_details`/`attendances`/`match_set_stats`, poi la riga `users`, account Auth intatto)
 - **Elimina squadra** (pulsante rosso sulla card, conferma nativa del browser): cancella in cascata `match_set_stats` → `matches` → `attendances` → `events` della squadra, poi libera i membri (`users.team_id = null`, restano come utenti) e infine la riga `teams`. Irreversibile. Non permette invece di creare/assegnare il ruolo `admin` — operazione rara e ad alto rischio, lasciata a SQL Editor/Table Editor manuale
+- **Regolamento del campionato** (per squadra, scelta deliberata: squadre diverse possono giocare campionati con regole diverse): upload PDF su Storage bucket `team-documents/{team_id}/regolamento.<ext>` → salva l'URL pubblico su `teams.regolamento_url`, oppure "Rimuovi" (torna a null, il 📋 in NavBar si nasconde per quella squadra). Solo il super-admin può caricarlo/rimuoverlo (il coach vede solo il link, da NavBar)
+
+### Branding "Aggiungi a Home" per squadra
+Nome e icona mostrati da Android/iOS quando un giocatore installa l'app sulla propria home: di default sono quelli statici di `app/manifest.ts`/`app/layout.tsx` ("Dindiats Volley"), ma appena `AuthProvider` conosce la squadra dell'utente, `TeamBranding` sovrascrive lato client `<link rel="manifest">` (puntandolo a `/api/team-manifest/[teamId]`, che restituisce nome+logo di quella squadra), `<link rel="apple-touch-icon">` e `<meta name="apple-mobile-web-app-title">`. Limite noto: essendo l'autenticazione Supabase solo client-side (nessun cookie di sessione leggibile dal server), non è possibile personalizzare l'HTML renderizzato dal server al primo caricamento — la sovrascrittura avviene dopo il login via JavaScript, quindi funziona per chi installa l'app *dopo* aver effettuato login almeno una volta in quella sessione di navigazione, non dal primissimo instante di apertura del link.
 
 ## Convenzioni di sviluppo
 - Ogni componente pagina ha una funzione interna `*Content()` avvolta da `<RequireAuth>`

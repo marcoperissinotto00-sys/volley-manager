@@ -19,30 +19,55 @@ export interface Profile {
   team_id: string | null;
 }
 
+export interface Team {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  regolamento_url: string | null;
+}
+
 interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
+  team: Team | null;
   loading: boolean;
   isCoach: boolean;
   isSuperAdmin: boolean;
   refreshProfile: () => Promise<void>;
+  refreshTeam: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
+  team: null,
   loading: true,
   isCoach: false,
   isSuperAdmin: false,
   refreshProfile: async () => {},
+  refreshTeam: async () => {},
   signOut: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+
+  async function loadTeam(teamId: string | null) {
+    if (!teamId) {
+      setTeam(null);
+      return;
+    }
+    const { data } = await supabase
+      .from('teams')
+      .select('id, name, logo_url, regolamento_url')
+      .eq('id', teamId)
+      .maybeSingle();
+    setTeam((data as Team) ?? null);
+  }
 
   async function loadProfile(userId: string) {
     const { data, error } = await supabase
@@ -53,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!error && data) {
       setProfile(data as Profile);
+      await loadTeam((data as Profile).team_id);
       return;
     }
 
@@ -100,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loadProfile(session.user.id);
       } else {
         setProfile(null);
+        setTeam(null);
       }
     });
 
@@ -113,6 +140,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await loadProfile(user.id);
   }
 
+  async function refreshTeam() {
+    await loadTeam(profile?.team_id ?? null);
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
@@ -121,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = profile?.user_role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isCoach, isSuperAdmin, refreshProfile, signOut }}>
+    <AuthContext.Provider value={{ user, profile, team, loading, isCoach, isSuperAdmin, refreshProfile, refreshTeam, signOut }}>
       {children}
     </AuthContext.Provider>
   );
