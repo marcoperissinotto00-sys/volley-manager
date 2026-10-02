@@ -106,7 +106,6 @@ lib/
 - `public.my_team_id()` — SECURITY DEFINER, la `team_id` di chi è loggato
 - `public.is_super_admin()` — SECURITY DEFINER, `true` se `user_role = 'admin'`
 - `public.is_coach_of_my_team()` — SECURITY DEFINER, `true` se `user_role in ('coach', 'admin')`; un admin con una `team_id` propria viene trattato come coach di quella squadra (non delle altre: le policy che la usano richiedono sempre anche `team_id = my_team_id()`)
-- `public.is_coach_or_admin()` — funzione originale pre-multi-squadra, non più usata da nessuna policy (rimasta solo per compatibilità, si può rimuovere)
 - `public.handle_new_user()` — trigger su auth.users INSERT: crea automaticamente la riga in public.users con ruolo 'player', `is_active = false` (in attesa di approvazione, vedi Autenticazione), nome/cognome da `raw_user_meta_data` (form o Google); `team_id` resta NULL finché non si usa un link di invito
 - `public.resolve_team_by_invite_code(code)` / `public.claim_team_by_invite_code(code)` — vedi Autenticazione → iscrizione via link di invito
 - `public.set_event_team_id()` — trigger BEFORE INSERT su `events`: imposta `team_id` e `created_by` da chi crea l'evento
