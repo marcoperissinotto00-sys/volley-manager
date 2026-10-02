@@ -587,9 +587,9 @@ function CalendarPageContent() {
                           ${overlap && !selected ? 'ring-2 ring-red-400' : ''}
                           ${dayEvents.length > 0 ? 'active:scale-95' : ''}`}>
                         <span>{d.getDate()}</span>
-                        <div className="flex gap-0.5">
+                        <div className="flex gap-1">
                           {dayEvents.slice(0, 3).map((ev) => (
-                            <span key={ev.id} className={`w-1.5 h-1.5 rounded-full ${selected ? 'bg-white' :
+                            <span key={ev.id} className={`w-2.5 h-2.5 rounded-full ${selected ? 'bg-white' :
                               ev.event_type === 'match' ? 'bg-amber-500' : ev.event_type === 'training' ? 'bg-slate-400' : 'bg-blue-500'}`} />
                           ))}
                         </div>
@@ -599,9 +599,9 @@ function CalendarPageContent() {
                   })}
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1 flex-wrap">
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-400" />Allenamento</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Partita</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Evento</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-400" />Allenamento</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />Partita</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" />Evento</span>
                   <span className="flex items-center gap-1 ml-auto"><span className="w-2.5 h-2.5 rounded ring-2 ring-red-400" />Più eventi</span>
                 </div>
               </>
