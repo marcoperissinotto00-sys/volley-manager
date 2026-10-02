@@ -464,24 +464,33 @@ function PlayersPageContent() {
                   <thead>
                     <tr className="text-slate-500">
                       <th className="text-left font-medium px-4 py-2 sticky left-0 bg-white">Giocatore</th>
+                      {attendanceMonths.length > 1 && (
+                        <th className="text-center font-semibold px-2 py-2 whitespace-nowrap text-slate-700">Tot.</th>
+                      )}
                       {attendanceMonths.map((m) => (
                         <th key={m} className="text-center font-medium px-2 py-2 whitespace-nowrap">{formatMonthLabel(m)}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {players.map((p) => (
-                      <tr key={p.id}>
-                        <td className="px-4 py-2 font-medium text-slate-800 truncate sticky left-0 bg-white">
-                          {p.first_name} {p.last_name}
-                        </td>
-                        {attendanceMonths.map((m) => (
-                          <td key={m} className="text-center px-2 py-2 tabular-nums text-slate-700">
-                            {attendanceStats[m]?.[p.id] ?? 0}
+                    {players.map((p) => {
+                      const total = attendanceMonths.reduce((sum, m) => sum + (attendanceStats[m]?.[p.id] ?? 0), 0);
+                      return (
+                        <tr key={p.id}>
+                          <td className="px-4 py-2 font-medium text-slate-800 truncate sticky left-0 bg-white">
+                            {p.first_name} {p.last_name}
                           </td>
-                        ))}
-                      </tr>
-                    ))}
+                          {attendanceMonths.length > 1 && (
+                            <td className="text-center px-2 py-2 tabular-nums font-semibold text-slate-900">{total}</td>
+                          )}
+                          {attendanceMonths.map((m) => (
+                            <td key={m} className="text-center px-2 py-2 tabular-nums text-slate-700">
+                              {attendanceStats[m]?.[p.id] ?? 0}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
