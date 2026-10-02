@@ -159,11 +159,10 @@ function CalendarPageContent() {
   const [openWho, setOpenWho] = useState<Record<string, boolean>>({});
   const [openAppello, setOpenAppello] = useState<Record<string, boolean>>({});
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
-  const [showHistory, setShowHistory] = useState(false);
 
   // Vista a griglia mensile (sola visualizzazione, per individuare sovrapposizioni)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [gridMonth, setGridMonth] = useState(() => {
+  const [calendarMonth, setCalendarMonth] = useState(() => {
     const d = new Date();
     d.setDate(1); d.setHours(0, 0, 0, 0);
     return d;
@@ -190,14 +189,10 @@ function CalendarPageContent() {
 
   const geocodeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function fetchAll(page = currentPage, tab = filterTab, history = showHistory) {
+  async function fetchAll(page = currentPage, tab = filterTab, month = calendarMonth) {
     setLoading(true);
-    const now = new Date();
-    // Confine tra "prossimi" e "storico" = inizio della giornata odierna, non l'ora esatta:
-    // un evento di oggi già passato d'orario deve restare tra i prossimi, non sparire nello storico
-    const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
-    const todayIso = startOfToday.toISOString();
-    const in30DaysIso = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const start = new Date(month.getFullYear(), month.getMonth(), 1);
+    const end = new Date(month.getFullYear(), month.getMonth() + 1, 1);
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -205,15 +200,10 @@ function CalendarPageContent() {
     let query = supabase
       .from('events')
       .select('*', { count: 'exact' })
+      .gte('date_time', start.toISOString())
+      .lt('date_time', end.toISOString())
+      .order('date_time', { ascending: true })
       .range(from, to);
-
-    if (history) {
-      // storico: eventi passati, dal più recente al più vecchio
-      query = query.lt('date_time', todayIso).order('date_time', { ascending: false });
-    } else {
-      // default: prossimi 30 giorni, crescente
-      query = query.gte('date_time', todayIso).lte('date_time', in30DaysIso).order('date_time', { ascending: true });
-    }
 
     if (tab === 'training') query = query.eq('event_type', 'training');
     if (tab === 'match') query = query.eq('event_type', 'match');
@@ -270,10 +260,10 @@ function CalendarPageContent() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchAll(1, filterTab, showHistory);
+    fetchAll(1, filterTab, calendarMonth);
     setCurrentPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterTab, showHistory]);
+  }, [filterTab, calendarMonth]);
 
   useEffect(() => {
     if (!isCoach) return;
@@ -289,7 +279,7 @@ function CalendarPageContent() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchAll(currentPage, filterTab, showHistory);
+    fetchAll(currentPage, filterTab, calendarMonth);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
 
@@ -318,11 +308,11 @@ function CalendarPageContent() {
   useEffect(() => {
     if (viewMode === 'grid') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchGridEvents(gridMonth, filterTab);
+      fetchGridEvents(calendarMonth, filterTab);
       setSelectedDay(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, gridMonth, filterTab]);
+  }, [viewMode, calendarMonth, filterTab]);
 
   const eventsByDay = useMemo(() => {
     const map: Record<string, EventRow[]> = {};
@@ -334,8 +324,8 @@ function CalendarPageContent() {
     return map;
   }, [gridEvents]);
 
-  const monthGridCells = useMemo(() => buildMonthGrid(gridMonth), [gridMonth]);
-  const monthLabel = gridMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  const monthGridCells = useMemo(() => buildMonthGrid(calendarMonth), [calendarMonth]);
+  const monthLabel = calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 
   function handleLocationChange(value: string) {
     setLocation(value);
@@ -433,7 +423,7 @@ function CalendarPageContent() {
     if (events.length === 1 && currentPage > 1) {
       setCurrentPage((p) => p - 1);
     } else {
-      fetchAll(currentPage, filterTab, showHistory);
+      fetchAll(currentPage, filterTab, calendarMonth);
     }
   }
 
@@ -465,7 +455,7 @@ function CalendarPageContent() {
       showError(`Impossibile salvare la risposta: ${error.message}`);
       setAttendances((prev) => ({ ...prev, [eventId]: prevList }));
     } else {
-      fetchAll(currentPage, filterTab, showHistory);
+      fetchAll(currentPage, filterTab, calendarMonth);
     }
   }
 
@@ -491,7 +481,7 @@ function CalendarPageContent() {
           [entry.event_id]: (prev[entry.event_id] || []).filter((a) => a.user_id !== entry.user_id),
         }));
       } else {
-        fetchAll(currentPage, filterTab, showHistory);
+        fetchAll(currentPage, filterTab, calendarMonth);
       }
       return;
     }
@@ -523,19 +513,9 @@ function CalendarPageContent() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Calendario</h1>
-          <p className="text-xs text-slate-500 mt-0.5 capitalize">
-            {viewMode === 'grid' ? monthLabel : showHistory ? 'Storico eventi passati' : 'Prossimi 30 giorni'}
-          </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          {viewMode === 'list' && (
-            <button
-              onClick={() => { setShowHistory((v) => !v); setShowForm(false); setCurrentPage(1); }}
-              className={`px-3 py-2.5 font-semibold rounded-xl text-sm transition-all active:scale-95 border ${showHistory ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>
-              {showHistory ? '← Prossimi' : '🕐 Storico'}
-            </button>
-          )}
-          {isCoach && viewMode === 'list' && !showHistory && (
+          {isCoach && viewMode === 'list' && (
             <button onClick={() => (showForm ? resetForm() : setShowForm(true))}
               className="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition-all text-sm">
               {showForm ? '✕' : '+ Nuovo'}
@@ -564,18 +544,25 @@ function CalendarPageContent() {
         ))}
       </div>
 
+      {/* Navigazione mese — comune a Lista e Calendario */}
+      <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border px-2 py-2">
+        <button onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+          className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">‹</button>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-slate-900 capitalize">{monthLabel}</span>
+          {dayKey(calendarMonth) !== dayKey(new Date(new Date().getFullYear(), new Date().getMonth(), 1)) && (
+            <button onClick={() => setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+              className="text-xs text-blue-600 font-semibold bg-blue-50 border border-blue-200 rounded-full px-2.5 py-1 active:scale-95">Oggi</button>
+          )}
+        </div>
+        <button onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+          className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">›</button>
+      </div>
+
       {viewMode === 'grid' ? (
         <>
           {/* Griglia mensile — sola visualizzazione, per individuare sovrapposizioni */}
           <div className="bg-white rounded-2xl shadow-sm border p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <button onClick={() => { setGridMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)); }}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">‹</button>
-              <div className="text-base font-bold text-slate-900 capitalize">{monthLabel}</div>
-              <button onClick={() => { setGridMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)); }}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 active:scale-95 text-slate-600 font-bold text-lg">›</button>
-            </div>
-
             {gridLoading ? (
               <div className="py-10 text-center text-slate-400 text-sm">Caricamento…</div>
             ) : (
@@ -642,8 +629,10 @@ function CalendarPageContent() {
                       <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full shrink-0 ${ev.event_type === 'match' ? 'bg-amber-100 text-amber-800' : ev.event_type === 'training' ? 'bg-slate-100 text-slate-600' : 'bg-blue-100 text-blue-700'}`}>
                         {EVENT_TYPE_LABELS[ev.event_type]}
                       </span>
-                      <div className="flex-1 min-w-0 text-sm text-slate-700 truncate">{eventTitle(ev)}</div>
-                      {ev.location && <div className="text-xs text-slate-400 truncate max-w-[30%]">📍 {ev.location}</div>}
+                      {ev.event_type !== 'training' && (
+                        <div className="flex-1 min-w-0 text-sm text-slate-700 truncate">{eventTitle(ev)}</div>
+                      )}
+                      {ev.location && <div className="text-xs text-slate-400 truncate max-w-[30%] ml-auto">📍 {ev.location}</div>}
                     </div>
                   );
                 })}
@@ -755,9 +744,7 @@ function CalendarPageContent() {
       {/* Lista eventi */}
       {events.length === 0 ? (
         <div className="p-10 text-center bg-white rounded-xl shadow text-slate-500">
-          {showHistory
-            ? 'Nessun evento passato trovato.'
-            : filterTab === 'all' ? 'Nessun appuntamento nei prossimi 30 giorni.' : `Nessuna ${filterTab === 'match' ? 'partita' : 'allenamento'} nei prossimi 30 giorni.`}
+          {filterTab === 'all' ? `Nessun appuntamento a ${monthLabel}.` : `Nessuna ${filterTab === 'match' ? 'partita' : 'allenamento'} a ${monthLabel}.`}
         </div>
       ) : (
         <>

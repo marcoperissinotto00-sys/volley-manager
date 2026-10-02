@@ -116,10 +116,10 @@ Ogni utente può aggiornare la propria riga in `users` e `athlete_details` (poli
 
 ### Calendario (`/calendar`)
 - Toggle "📋 Lista" / "🗓️ Calendario": vista lista (default) o griglia mensile sola-visualizzazione (nessuna creazione/modifica dalla griglia), per individuare colpo d'occhio eventi nello stesso giorno; ogni cella mostra pallini colorati per tipo evento e un bordo rosso se ci sono 2+ eventi quel giorno; tap su un giorno apre sotto la griglia il dettaglio (orario, tipo, titolo, luogo) di tutti gli eventi di quel giorno, ordinati per ora
-- Vista lista default: prossimi 30 giorni, ordine crescente
-- Pulsante "🕐 Storico": eventi passati, ordine decrescente
+- Navigazione per mese (frecce ‹ › + etichetta mese, pulsante "Oggi" per tornare al mese corrente): comune a vista lista e griglia, un unico stato (`calendarMonth`) condiviso tra le due — cambiare mese in una vista resta impostato anche passando all'altra
+- Vista lista: eventi del mese selezionato, ordine crescente
 - Tab filtri: Tutti / Allenamenti / Partite (valgono sia per lista che per griglia)
-- Paginazione: 10 eventi per pagina (solo vista lista)
+- Paginazione: 10 eventi per pagina (solo vista lista, entro il mese selezionato)
 - RSVP per ogni evento: Ci sono / In ritardo / Forse / Non ci sono (toggle)
 - "Chi ha risposto": lista nomi per stato
 - **Appello presenze** (solo coach): spunta chi è fisicamente presente (`checked_in`); l'elenco include chi ha risposto Ci sono, In ritardo o Forse (non chi ha risposto Non ci sono)
