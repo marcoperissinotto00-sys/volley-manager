@@ -16,6 +16,7 @@ export interface Profile {
   jersey_number: number | null;
   is_active: boolean;
   avatar_url: string | null;
+  team_id: string | null;
 }
 
 interface AuthContextValue {

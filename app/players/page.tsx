@@ -74,13 +74,17 @@ interface PlayerRow {
 }
 
 function PlayersPageContent() {
-  const { isCoach } = useAuth();
+  const { isCoach, profile } = useAuth();
   const { showError } = useToast();
 
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [teamInvite, setTeamInvite] = useState<{ name: string; invite_code: string } | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [inviteOrigin, setInviteOrigin] = useState('');
 
   const [showStats, setShowStats] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -149,6 +153,37 @@ function PlayersPageContent() {
     fetchPlayers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setInviteOrigin(window.location.origin);
+  }, []);
+
+  useEffect(() => {
+    if (!isCoach || !profile?.team_id) return;
+    supabase.from('teams').select('name, invite_code').eq('id', profile.team_id).maybeSingle()
+      .then(({ data }) => {
+        if (data) setTeamInvite(data as { name: string; invite_code: string });
+      });
+  }, [isCoach, profile?.team_id]);
+
+  function teamInviteLink() {
+    return teamInvite ? `${inviteOrigin}/register?team=${teamInvite.invite_code}` : '';
+  }
+
+  async function copyTeamInviteLink() {
+    try {
+      await navigator.clipboard.writeText(teamInviteLink());
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2000);
+    } catch {
+      showError('Impossibile copiare il link: selezionalo e copialo a mano.');
+    }
+  }
+
+  function teamInviteWhatsappUrl() {
+    const text = `🏐 Iscriviti a "${teamInvite?.name}": ${teamInviteLink()}`;
+    return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+  }
 
   async function fetchMatchStats() {
     setStatsLoading(true);
@@ -398,6 +433,23 @@ function PlayersPageContent() {
           {isCoach && pendingCount > 0 && ` · ${pendingCount} in attesa di approvazione`}
         </p>
       </div>
+
+      {isCoach && teamInvite && (
+        <div className="bg-white rounded-xl shadow border p-4 space-y-2">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Link di invito — {teamInvite.name}</div>
+          <div className="text-xs font-mono text-slate-700 break-all">{teamInviteLink()}</div>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={copyTeamInviteLink}
+              className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg active:scale-95 transition-all">
+              {inviteCopied ? '✓ Copiato' : '📋 Copia link'}
+            </button>
+            <a href={teamInviteWhatsappUrl()} target="_blank" rel="noopener noreferrer"
+              className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg active:scale-95 transition-all">
+              📤 WhatsApp
+            </a>
+          </div>
+        </div>
+      )}
 
       {expiringMedical.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
