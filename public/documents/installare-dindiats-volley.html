@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installare Dindiats Volley</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #f5f7fb;
+    --surface: #ffffff;
+    --border: #e2e6f0;
+    --ink: #1c2333;
+    --ink-muted: #5b6478;
+    --accent: #2f5fd8;
+    --accent-ink: #ffffff;
+    --accent-soft: #e8eefc;
+    --amber: #d9820a;
+    --amber-soft: #fbf0dc;
+    --focus: #2f5fd8;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10131c;
+      --surface: #171b28;
+      --border: #262c3f;
+      --ink: #e7eaf3;
+      --ink-muted: #9aa3ba;
+      --accent: #7ea0f7;
+      --accent-ink: #10131c;
+      --accent-soft: #1f2a45;
+      --amber: #f2a93c;
+      --amber-soft: #35270f;
+      --focus: #7ea0f7;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #10131c;
+    --surface: #171b28;
+    --border: #262c3f;
+    --ink: #e7eaf3;
+    --ink-muted: #9aa3ba;
+    --accent: #7ea0f7;
+    --accent-ink: #10131c;
+    --accent-soft: #1f2a45;
+    --amber: #f2a93c;
+    --amber-soft: #35270f;
+    --focus: #7ea0f7;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.55;
+  }
+
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Outfit', system-ui, sans-serif;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .eyebrow {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.6rem;
+  }
+
+  h1 {
+    font-size: clamp(1.6rem, 4.5vw, 2.15rem);
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .lede {
+    margin: 0.9rem 0 0;
+    color: var(--ink-muted);
+    font-size: 1.02rem;
+    max-width: 60ch;
+  }
+
+  .why {
+    margin-top: 1.75rem;
+    padding: 1rem 1.15rem;
+    background: var(--accent-soft);
+    border-radius: 12px;
+    font-size: 0.95rem;
+    color: var(--ink);
+  }
+  .why strong { color: var(--accent); }
+
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin: 2.25rem 0 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.98rem;
+    color: var(--ink-muted);
+    background: transparent;
+    border: none;
+    padding: 0.65rem 0.25rem;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .tab svg { width: 1.1em; height: 1.1em; flex: none; }
+
+  .tab[aria-selected="true"] {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  section.platform[hidden] { display: none; }
+
+  .os-block {
+    margin-bottom: 2rem;
+  }
+
+  .os-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.9rem;
+  }
+
+  .os-title .tag {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--ink-muted);
+    background: var(--border);
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+
+  ol.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  ol.steps li {
+    display: flex;
+    gap: 0.85rem;
+    align-items: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
+  }
+
+  .num {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--accent-ink);
+    background: var(--accent);
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    margin-top: 0.05rem;
+  }
+
+  .step-text { font-size: 0.95rem; }
+  .step-text b { font-weight: 600; }
+
+  .caution {
+    margin-top: 0.85rem;
+    padding: 0.85rem 1rem;
+    background: var(--amber-soft);
+    border-radius: 12px;
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+  .caution b { color: var(--amber); }
+
+  .note {
+    margin-top: 2rem;
+    font-size: 0.88rem;
+    color: var(--ink-muted);
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+  }
+  .note b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="eyebrow">Guida rapida</p>
+  <h1>Installare Dindiats Volley</h1>
+  <p class="lede">In due minuti puoi avere l'app direttamente sul telefono o sul computer, con la sua icona, senza passare dal browser ogni volta.</p>
+
+  <div class="why">
+    <strong>Perché farlo:</strong> si apre a schermo intero come un'app vera (niente barra degli indirizzi), parte più veloce e la trovi subito insieme alle altre app.
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-phone" aria-selected="true" aria-controls="panel-phone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+      Telefono
+    </button>
+    <button class="tab" role="tab" id="tab-desktop" aria-selected="false" aria-controls="panel-desktop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Computer
+    </button>
+  </div>
+
+  <section class="platform" id="panel-phone" role="tabpanel" aria-labelledby="tab-phone">
+    <div class="os-block">
+      <div class="os-title">Android <span class="tag">Chrome</span></div>
+      <ol class="steps">
+        <li><span class="num">1</span><span class="step-text">Apri il sito di Dindiats Volley in <b>Chrome</b></span></li>
+        <li><span class="num">2</span><span class="step-text">Tocca i <b>tre puntini</b> in alto a destra</span></li>
+        <li><span class="num">3</span><span class="step-text">Scegli <b>"Installa app"</b> o <b>"Aggiungi a schermata Home"</b></span></li>
+        <li><span class="num">4</span><span class="step-text">Conferma toccando <b>"Installa"</b> — l'icona compare tra le altre app</span></li>
+      </ol>
+      <div class="caution">
+        <b>Vedi un avviso "App non sicura bloccata" di Google Play Protect?</b> È normale la prima volta: Android non ha ancora "visto" abbastanza questa installazione e segnala in automatico, non è un problema reale dell'app. Tocca "Altri dettagli" e poi "Installa comunque" (o simile). Se preferisci, puoi anche continuare a usare l'app dal browser senza installarla — funziona identica.
+      </div>
+    </div>
+    <div class="os-block">
+      <div class="os-title">iPhone <span class="tag">Safari</span></div>
+      <ol class="steps">
+        <li><span class="num">1</span><span class="step-text">Apri il sito in <b>Safari</b> — deve essere Safari, con Chrome su iPhone l'opzione non c'è</span></li>
+        <li><span class="num">2</span><span class="step-text">Tocca l'icona di <b>condivisione</b> (il quadrato con la freccia verso l'alto, in basso)</span></li>
+        <li><span class="num">3</span><span class="step-text">Scorri e tocca <b>"Aggiungi alla schermata Home"</b></span></li>
+        <li><span class="num">4</span><span class="step-text">Tocca <b>"Aggiungi"</b> in alto a destra</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="platform" id="panel-desktop" role="tabpanel" aria-labelledby="tab-desktop" hidden>
+    <div class="os-block">
+      <div class="os-title">Windows / Mac <span class="tag">Chrome o Edge</span></div>
+      <ol class="steps">
+        <li><span class="num">1</span><span class="step-text">Apri il sito di Dindiats Volley</span></li>
+        <li><span class="num">2</span><span class="step-text">Nella barra degli indirizzi cerca l'icona di <b>installazione</b> (un monitor con una freccina, sulla destra) — se non la vedi, apri il menu <b>⋮</b> e scegli <b>"Installa Dindiats Volley..."</b></span></li>
+        <li><span class="num">3</span><span class="step-text">Clicca <b>"Installa"</b></span></li>
+        <li><span class="num">4</span><span class="step-text">L'app si apre in una finestra tutta sua: su Windows la trovi nel <b>menu Start</b> (con tasto destro puoi "Aggiungi a Desktop" o "Aggiungi alla barra delle applicazioni"), su Mac nel <b>Launchpad</b></span></li>
+      </ol>
+    </div>
+    <div class="os-block">
+      <div class="os-title">Mac <span class="tag">Safari</span></div>
+      <ol class="steps">
+        <li><span class="num">1</span><span class="step-text">Apri il sito in Safari</span></li>
+        <li><span class="num">2</span><span class="step-text">Dal menu <b>File</b> in alto scegli <b>"Aggiungi al Dock"</b></span></li>
+        <li><span class="num">3</span><span class="step-text">Conferma il nome e clicca <b>"Aggiungi"</b></span></li>
+        <li><span class="num">4</span><span class="step-text">L'icona compare nel <b>Dock</b> e si apre come un'app separata</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <p class="note"><b>Non trovi l'opzione?</b> Aggiorna il browser all'ultima versione e riprova — su alcuni telefoni Android meno recenti la voce si chiama solo "Aggiungi a schermata Home" invece di "Installa app", ma il risultato è lo stesso. Dubbi? Chiedi al coach.</p>
+</div>
+
+<script>
+  (function () {
+    var tabs = [document.getElementById('tab-phone'), document.getElementById('tab-desktop')];
+    var panels = { 'tab-phone': document.getElementById('panel-phone'), 'tab-desktop': document.getElementById('panel-desktop') };
+
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        tabs.forEach(function (t) {
+          var selected = t === tab;
+          t.setAttribute('aria-selected', String(selected));
+          panels[t.id].hidden = !selected;
+        });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

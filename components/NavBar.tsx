@@ -69,6 +69,15 @@ export default function NavBar() {
           </Link>
           <div className="flex items-center gap-1.5 shrink-0">
             <a
+              href="/documents/guida-dindiats-volley.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Guida all'app"
+              className="px-2.5 py-2 bg-slate-100 active:scale-95 text-slate-700 rounded-lg text-sm transition-all"
+            >
+              📖
+            </a>
+            <a
               href="/documents/norme-partecipazione-giv-tonic-2026-2027.pdf"
               target="_blank"
               rel="noopener noreferrer"

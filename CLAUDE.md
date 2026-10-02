@@ -24,7 +24,7 @@ app/
   profile/page.tsx    — "Il mio profilo": ogni utente modifica i propri dati anagrafici e la foto (ruolo/maglia restano gestiti dal coach)
   admin/page.tsx      — Console super-admin (solo user_role='admin'): crea squadre, genera/rigenera link di invito, attiva il primo coach di una nuova squadra
 components/
-  NavBar.tsx          — Header con identità/logout (link a /profile) + bottom tab bar (Calendario/Rosa)
+  NavBar.tsx          — Header con identità/logout (link a /profile), 📖 guida app + 📋 regolamento, bottom tab bar (Calendario/Rosa, +Admin per i super-admin)
   RequireAuth.tsx     — Protezione pagine (coachOnly per /match)
 lib/
   supabase.ts         — Client Supabase (chiavi da .env.local)
@@ -221,3 +221,4 @@ File di migrazione (in `supabase/`, da eseguire con l'SQL Editor di Supabase, no
 - Due utenti hanno ruolo `coach` (coach-giocatori: fanno entrambe le cose, nessun cambio profilo necessario)
 - La tabella `atleti` è stata eliminata (era duplicato di `users`); i dati anagrafici ora sono in `athlete_details`
 - Nome definitivo della squadra/app: **Dindiats Volley** (manifest PWA, titolo pagina, header login/registrazione)
+- `public/documents/` ospita pagine/file statici linkati dall'header (non passano da Supabase né richiedono build): `norme-partecipazione-giv-tonic-2026-2027.pdf` (regolamento), `guida-dindiats-volley.html` (manuale rapido giocatore/coach, con tab e screenshot incorporati come data-URI) e `installare-dindiats-volley.html` (guida PWA, linkata dalla guida principale). Pagine HTML autonome (proprio `<!doctype html>`), non pagine Next — per aggiornarle si modifica direttamente il file
